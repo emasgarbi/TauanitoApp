@@ -59,6 +59,18 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+
+    // Navigation for switching between login and sensor screens
+    implementation(libs.androidx.navigation.compose)
+
+    // ViewModel integration with Compose
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+
+    // Networking stack: OkHttp with cookie session + Jsoup for HTML parsing
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.jsoup)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
