@@ -47,7 +47,7 @@ Questa nuova interfaccia mostra un elenco cronologico di tutte le letture regist
 
 ---
 
-*Documento aggiornato al 3 Marzo 2026.*
+*Documento aggiornato al 3 Marzo 2026 (v1.0.8).*
 
 ---
 
@@ -136,6 +136,138 @@ Firebase (init, token FCM, notifiche push) viene ora inizializzato **solo se Pla
 1.  **`app/build.gradle.kts`** — compileSdk 35, targetSdk 35, dipendenze aggiornate/rimosse.
 2.  **`AndroidManifest.xml`** — aggiunti 3 flag di disabilitazione Firebase auto-init.
 3.  **`MainActivity.kt`** — aggiunto `isPlayServicesAvailable()`, Firebase condizionato alla sua presenza.
+
+---
+
+## 11. Fix Biometrica e Ordinamento — Sprint Marzo 2026
+
+### A. Reset Biometria ad Ogni Avvio (Fix Definitivo)
+
+#### Problema
+L'accesso biometrico compariva al primo avvio dell'app anche quando non avrebbe dovuto essere disponibile. Le `SharedPreferences` persistono tra una sessione e l'altra (e tra aggiornamenti APK senza disinstallazione), quindi il flag `isBiometricEnabled = true` sopravviveva al riavvio dell'app, mostrando il pulsante o il popup biometrico inaspettatamente.
+
+#### Soluzione — Reset in `MainActivity.onCreate()`
+All'avvio dell'app (prima che Compose venga inizializzato) viene eseguito un reset esplicito:
+
+```kotlin
+// La biometria parte sempre disabilitata ad ogni avvio.
+// L'utente la riattiva manualmente dopo aver effettuato il login.
+SecurePreferences.setBiometricEnabled(this, false)
+```
+
+Questo garantisce che:
+- Il toggle nel drawer parte sempre su **OFF** ad ogni avvio a freddo
+- Il pulsante biometrico nella schermata di login non compare mai al primo accesso
+
+---
+
+### B. Biometrica Basata su Sessione (Flag `sessionLoginCompleted`)
+
+#### Problema
+Anche nascondendo il pulsante all'avvio, il pulsante tornava a comparire in scenari di logout/rientro nella stessa sessione basandosi sulle prefs, che potevano essere obsolete.
+
+#### Soluzione — Companion Object in `LoginViewModel`
+È stato introdotto un flag **in memoria** che si azzera ad ogni riavvio del processo:
+
+```kotlin
+companion object {
+    // false ad ogni avvio a freddo, true dopo il primo login manuale nella sessione
+    private var sessionLoginCompleted = false
+}
+```
+
+**Flusso completo:**
+
+| Momento | `sessionLoginCompleted` | `isBiometricEnabled` (prefs) | Pulsante biometrico |
+|---|---|---|---|
+| Avvio app (freddo) | `false` | `false` (resettato in `onCreate`) | **Nascosto** |
+| Dopo login email+password | `true` | `false` (default) | Nascosto |
+| Utente attiva biometria nel drawer | `true` | `true` | **Visibile** |
+| Logout e ritorno al login | `true` (persiste nel processo) | `true` | **Visibile** |
+| App chiusa e riaperta | `false` (nuovo processo) | `false` (reset in `onCreate`) | **Nascosto** |
+
+#### Campo aggiunto a `LoginUiState`
+```kotlin
+data class LoginUiState(
+    ...
+    val showBiometricButton: Boolean = false  // gestito dal ViewModel, non dalle prefs
+)
+```
+La visibilità del pulsante viene letta da `state.showBiometricButton` e non più direttamente dalle `SharedPreferences`.
+
+---
+
+### C. Rimosso Auto-Trigger Biometrico alla Schermata di Login
+
+#### Problema
+Un `LaunchedEffect(Unit)` in `LoginRoute` mostrava automaticamente il popup biometrico ogni volta che l'utente arrivava alla schermata di login, senza che l'utente avesse toccato nulla.
+
+#### Soluzione
+Il blocco `LaunchedEffect` è stato rimosso completamente. La biometria è ora **solo su richiesta esplicita** dell'utente tramite il pulsante dedicato, che compare solo nelle condizioni corrette (post-login, biometria attiva).
+
+---
+
+### D. Ordinamento per Data in Filtri Dashboard
+
+#### Problema
+I dispositivi mostrati con il filtro **"Batteria Scarica"** e con la **ricerca per cliente** non erano ordinati per data di invio dati, rendendo difficile identificare i dispositivi più recenti.
+
+#### Causa
+Il pattern di timestamp dalla pagina web è `"27.02.2026 - 12:39"` (punti come separatori della data, trattino tra data e ora), ma `parseTimestamp()` usava il formato `"dd/MM/yyyy HH:mm"` (slash, nessun trattino), che non corrispondeva mai → tutti i timestamp restituivano `0L` → ordinamento casuale.
+
+#### Soluzione — `SensorViewModel.kt`
+```kotlin
+// Prima (errato):
+SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+
+// Dopo (corretto):
+SimpleDateFormat("dd.MM.yyyy - HH:mm", Locale.getDefault())
+```
+
+L'ordinamento discendente per data (`sortedByDescending`) è stato esteso anche al filtro cliente:
+```kotlin
+return if (showLowBatteryOnly || selectedCustomer != null) {
+    result.sortedByDescending { parseTimestamp(it.timestamp) }
+} else {
+    result
+}
+```
+
+---
+
+### E. Messaggi di Errore di Rete Leggibili
+
+#### Problema
+In caso di assenza di connessione internet, l'app mostrava il messaggio tecnico grezzo dell'eccezione Java: `"Unable to resolve host "www.tauanito.it": No address associated with hostname"`.
+
+#### Soluzione — `LoginViewModel.kt`
+```kotlin
+val msg = when {
+    e is java.net.UnknownHostException ->
+        "Impossibile raggiungere il server. Verifica la connessione internet."
+    e.message?.contains("timeout", ignoreCase = true) == true ->
+        "Connessione lenta. Riprova."
+    e.message?.contains("Email o password") == true -> e.message!!
+    else -> "Errore di connessione. Riprova."
+}
+```
+
+---
+
+### F. Aggiornamento Versione Prefs (`v8` → `v9`)
+
+Il nome delle `SharedPreferences` è stato aggiornato da `tauanito_prefs_v8` a `tauanito_prefs_v9` per invalidare lo stato biometrico ereditato da sessioni precedenti (approccio consistente con le versioni precedenti v6→v7→v8).
+
+---
+
+### File Modificati in questo Sprint
+| File | Modifica |
+|---|---|
+| `MainActivity.kt` | Reset `isBiometricEnabled = false` in `onCreate()` |
+| `LoginViewModel.kt` | `companion object sessionLoginCompleted`, `showBiometricButton` in state, messaggi errore rete |
+| `LoginScreen.kt` | Rimosso `LaunchedEffect` auto-trigger, pulsante legge `state.showBiometricButton` |
+| `SensorViewModel.kt` | Fix formato `parseTimestamp`, ordinamento per cliente esteso |
+| `SecurePreferences.kt` | Prefs rinominate `tauanito_prefs_v9` |
 
 ---
 

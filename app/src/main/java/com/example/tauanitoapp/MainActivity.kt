@@ -64,10 +64,6 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // La biometria parte sempre disabilitata ad ogni avvio.
-        // L'utente la riattiva manualmente dopo aver effettuato il login.
-        SecurePreferences.setBiometricEnabled(this, false)
-
         if (isPlayServicesAvailable()) {
             try {
                 FirebaseApp.initializeApp(this)

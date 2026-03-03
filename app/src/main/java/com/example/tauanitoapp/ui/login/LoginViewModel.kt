@@ -4,44 +4,24 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.tauanitoapp.data.repository.SensorRepository
-import com.example.tauanitoapp.utils.BiometricHelper
 import com.example.tauanitoapp.utils.SecurePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 data class LoginUiState(
-    val email:               String  = "",
-    val password:            String  = "",
-    val isLoading:           Boolean = false,
-    val isLoggedIn:          Boolean = false,
-    val errorMessage:        String? = null,
-    // Visibile solo dopo almeno un login manuale nella sessione corrente
-    val showBiometricButton: Boolean = false
+    val email:        String  = "",
+    val password:     String  = "",
+    val isLoading:    Boolean = false,
+    val isLoggedIn:   Boolean = false,
+    val errorMessage: String? = null
 )
 
 class LoginViewModel(application: Application) : AndroidViewModel(application) {
 
-    companion object {
-        // Flag di sessione: false ad ogni avvio a freddo, true dopo il primo login manuale.
-        // Sopravvive alle ricreazioni del ViewModel (logout/login nello stesso processo).
-        private var sessionLoginCompleted = false
-    }
-
     private val repository = SensorRepository(application)
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState
-
-    init {
-        // Se nella stessa sessione si è già fatto un login, il pulsante biometrico
-        // è disponibile (es. dopo logout e ritorno alla schermata di login)
-        if (sessionLoginCompleted &&
-            SecurePreferences.isBiometricEnabled(getApplication()) &&
-            BiometricHelper.isBiometricAvailable(getApplication())
-        ) {
-            _uiState.value = _uiState.value.copy(showBiometricButton = true)
-        }
-    }
 
     fun onEmailChange(newValue: String) {
         _uiState.value = _uiState.value.copy(email = newValue, errorMessage = null)
@@ -65,17 +45,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 repository.login(email, password)
                 SecurePreferences.saveCredentials(getApplication(), email, password)
-
-                // Primo login manuale riuscito: sblocca il pulsante biometrico per questa sessione
-                sessionLoginCompleted = true
-                val showBiometric = SecurePreferences.isBiometricEnabled(getApplication()) &&
-                    BiometricHelper.isBiometricAvailable(getApplication())
-
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    isLoggedIn = true,
-                    showBiometricButton = showBiometric
-                )
+                _uiState.value = _uiState.value.copy(isLoading = false, isLoggedIn = true)
             } catch (e: Exception) {
                 val msg = when {
                     e is java.net.UnknownHostException -> "Impossibile raggiungere il server. Verifica la connessione internet."
@@ -88,16 +58,12 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Login rapido tramite biometria. Disponibile solo dopo il primo login manuale della sessione.
-     */
     fun loginWithBiometrics(onSuccess: () -> Unit) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             try {
                 val devices = repository.getDevices()
                 if (devices.isNotEmpty() || repository.isSessionValid()) {
-                    sessionLoginCompleted = true
                     _uiState.value = _uiState.value.copy(isLoading = false, isLoggedIn = true)
                     onSuccess()
                     return@launch
@@ -107,7 +73,6 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                 val password = SecurePreferences.getSavedPassword(getApplication())
                 if (email != null && password != null) {
                     repository.login(email, password)
-                    sessionLoginCompleted = true
                     _uiState.value = _uiState.value.copy(isLoading = false, isLoggedIn = true)
                     onSuccess()
                 } else {

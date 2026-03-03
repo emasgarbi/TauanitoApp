@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -26,6 +27,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.tauanitoapp.R
 import com.example.tauanitoapp.utils.BiometricHelper
+import com.example.tauanitoapp.utils.SecurePreferences
 
 @Composable
 fun LoginRoute(
@@ -36,22 +38,37 @@ fun LoginRoute(
     val context = LocalContext.current
     val activity = context as? FragmentActivity
 
+    // Auto-trigger biometrico: si attiva se l'utente aveva già abilitato la biometria
+    // in una sessione precedente (hasLoggedInOnce=true e isBiometricEnabled=true nelle prefs).
+    // Su prima installazione assoluta entrambi sono false → non si attiva.
+    LaunchedEffect(Unit) {
+        val hasLoggedIn      = SecurePreferences.hasLoggedInOnce(context)
+        val biometricEnabled = SecurePreferences.isBiometricEnabled(context)
+        if (activity != null && hasLoggedIn && biometricEnabled && BiometricHelper.isBiometricAvailable(context)) {
+            BiometricHelper.showBiometricPrompt(
+                activity  = activity,
+                onSuccess = { viewModel.loginWithBiometrics(onLoginSuccess) },
+                onError   = { /* l'utente può usare la password manualmente */ }
+            )
+        }
+    }
+
     if (state.isLoggedIn) {
         onLoginSuccess()
         return
     }
 
     LoginScreen(
-        state           = state,
-        onEmailChange   = viewModel::onEmailChange,
+        state            = state,
+        onEmailChange    = viewModel::onEmailChange,
         onPasswordChange = viewModel::onPasswordChange,
-        onLoginClick    = viewModel::login,
+        onLoginClick     = viewModel::login,
         onBiometricClick = {
             if (activity != null) {
                 BiometricHelper.showBiometricPrompt(
-                    activity = activity,
+                    activity  = activity,
                     onSuccess = { viewModel.loginWithBiometrics(onLoginSuccess) },
-                    onError = { }
+                    onError   = { }
                 )
             }
         }
@@ -174,17 +191,19 @@ fun LoginScreen(
                             color       = Color.White
                         )
                     } else {
-                        Text(
-                            "Login",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text("Login", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
-                if (state.showBiometricButton) {
+                // Pulsante biometrico: visibile solo se l'utente ha già fatto login
+                // almeno una volta e ha abilitato esplicitamente la biometria
+                val currentContext = LocalContext.current
+                val isDataSaved    = SecurePreferences.hasLoggedInOnce(currentContext)
+                val isEnabled      = SecurePreferences.isBiometricEnabled(currentContext)
+
+                if (BiometricHelper.isBiometricAvailable(currentContext) && isDataSaved && isEnabled) {
                     IconButton(
-                        onClick = onBiometricClick,
+                        onClick  = onBiometricClick,
                         modifier = Modifier
                             .size(56.dp)
                             .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
@@ -192,7 +211,7 @@ fun LoginScreen(
                         Icon(
                             Icons.Default.Person,
                             contentDescription = "Login Biometrico",
-                            tint = Color.White,
+                            tint     = Color.White,
                             modifier = Modifier.size(32.dp)
                         )
                     }
