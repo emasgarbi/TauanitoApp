@@ -1,51 +1,33 @@
 package com.example.tauanitoapp.ui.sensors
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.tauanitoapp.R
 import com.example.tauanitoapp.data.model.BatteryLevel
 import com.example.tauanitoapp.data.model.Device
 import com.example.tauanitoapp.data.model.SensorReading
@@ -56,12 +38,42 @@ private val ColorDeviceName  = Color(0xFF198754) // verde nome device
 private val ColorTemperatura = Color(0xFFFFC107) // giallo/ambra
 private val ColorUmidita     = Color(0xFF1565C0) // blu
 private val ColorPressione   = Color(0xFF7B1FA2) // viola
-private val ColorCO2         = Color(0xFFB0BEC5) // grigio chiaro (leggibile su sfondo scuro)
-private val ColorIaq         = Color(0xFFECEFF1) // bianco grigio (leggibile su sfondo scuro)
+private val ColorCO2         = Color(0xFFB0BEC5) // grigio chiaro
+private val ColorIaq         = Color(0xFFECEFF1) // bianco grigio
 private val ColorBattFull    = Color(0xFF4CAF50)
 private val ColorBattHalf    = Color(0xFFFFB300)
 private val ColorBattLow     = Color(0xFFFF5722)
 private val ColorBattEmpty   = Color(0xFFF44336)
+
+// ── Testo con ombra leggibile dinamica ───────────────────────────────────────
+@Composable
+private fun OutlinedText(
+    text: String,
+    color: Color,
+    style: TextStyle,
+    fontWeight: FontWeight? = null,
+    isDarkMode: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text       = text,
+        color      = color,
+        style      = style.copy(
+            shadow = if (isDarkMode) Shadow(
+                color      = Color.Black,
+                offset     = Offset(0f, 2f),
+                blurRadius = 6f
+            ) else Shadow(
+                // Ombra "fantasma" quasi invisibile per distaccare il testo in Light Mode
+                color      = Color.Black.copy(alpha = 0.15f),
+                offset     = Offset(0f, 1f),
+                blurRadius = 3f
+            )
+        ),
+        fontWeight = fontWeight,
+        modifier   = modifier
+    )
+}
 
 // ── Lista clienti ────────────────────────────────────────────────────────────
 private val CUSTOMERS = listOf(
@@ -81,11 +93,21 @@ private val CUSTOMERS = listOf(
 // ── Route ────────────────────────────────────────────────────────────────────
 @Composable
 fun SensorRoute(
+    viewModel: SensorViewModel = viewModel(),
     onLogout: () -> Unit,
+    onDeviceClick: (String) -> Unit,
+    onOpenDrawer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val viewModel: SensorViewModel = viewModel()
     val state by viewModel.uiState.collectAsState()
+
+    // CARICAMENTO INTELLIGENTE: Avviamo solo quando entriamo nella rotta
+    LaunchedEffect(Unit) {
+        if (state.devices.isEmpty()) {
+            viewModel.refresh()
+        }
+        viewModel.startAutoRefresh()
+    }
 
     SensorScreen(
         state            = state,
@@ -93,6 +115,8 @@ fun SensorRoute(
         onLogout         = onLogout,
         onSearchChange   = viewModel::onSearchChange,
         onCustomerSelect = viewModel::onCustomerSelect,
+        onDeviceClick    = onDeviceClick,
+        onOpenDrawer     = onOpenDrawer,
         modifier         = modifier
     )
 }
@@ -106,84 +130,169 @@ fun SensorScreen(
     onLogout: () -> Unit,
     onSearchChange: (String) -> Unit,
     onCustomerSelect: (String?) -> Unit,
+    onDeviceClick: (String) -> Unit,
+    onOpenDrawer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Determiniamo se siamo in dark mode basandoci sulla luminosità dello sfondo del tema
+    val actualDarkMode = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    
+    val overlayColor = if (actualDarkMode) Color.Black.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.75f)
+    val contentColor = if (actualDarkMode) Color.White else Color.Black
+    val filterCardBg = if (actualDarkMode) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.08f)
+
+    Box(modifier = modifier.fillMaxSize()) {
+        // ── Sfondo schermata ─────────────────────────────────────────────────
+        Image(
+            painter            = painterResource(R.drawable.immaginesfondo),
+            contentDescription = null,
+            contentScale       = ContentScale.Crop,
+            modifier           = Modifier.matchParentSize()
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(overlayColor)
+        )
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 12.dp)
     ) {
         // ── Barra superiore ──────────────────────────────────────────────────
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 12.dp, bottom = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment     = Alignment.CenterVertically
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                text       = "Tauanito",
-                style      = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color      = ColorTitle
-            )
-            TextButton(onClick = onLogout) {
-                Text("Logout", color = MaterialTheme.colorScheme.error)
+            // Menù Hamburger a sinistra
+            IconButton(
+                onClick = onOpenDrawer,
+                modifier = Modifier.align(Alignment.CenterStart)
+            ) {
+                Icon(Icons.Default.Menu, contentDescription = "Apri Menù", tint = contentColor)
+            }
+
+            // Blocco centrato: Scritta + Logo
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text       = "Tauanito",
+                    style      = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color      = contentColor
+                )
+                Image(
+                    painter            = painterResource(R.drawable.tauanito_logo),
+                    contentDescription = "Logo Tauanito",
+                    modifier           = Modifier.size(42.dp),
+                    contentScale       = ContentScale.Fit
+                )
+            }
+
+            // Logout posizionato a destra
+            TextButton(
+                onClick = onLogout,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            ) {
+                Text("Logout", color = contentColor.copy(alpha = 0.8f), fontSize = 12.sp)
             }
         }
 
-        // ── Riga filtri: cerca device (sx) + filtra per cliente (dx) ─────────
-        Row(
-            modifier              = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment     = Alignment.CenterVertically
-        ) {
-            // Campo di testo ricerca device (metà larghezza)
-            OutlinedTextField(
-                value         = state.searchQuery,
-                onValueChange = onSearchChange,
-                modifier      = Modifier.weight(1f),
-                label         = { Text("Cerca device") },
-                leadingIcon   = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine    = true,
-                shape         = MaterialTheme.shapes.medium
+        // ── Card Filtri ───────────────────────────────────────────────────────
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            shape = RoundedCornerShape(20.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = if (actualDarkMode) 0.dp else 4.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = filterCardBg
             )
-
-            // Menù a tendina clienti (metà larghezza)
-            var dropdownExpanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded          = dropdownExpanded,
-                onExpandedChange  = { dropdownExpanded = it },
-                modifier          = Modifier.weight(1f)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value         = state.selectedCustomer ?: "Tutti",
-                    onValueChange = {},
-                    readOnly      = true,
-                    label         = { Text("Cliente") },
-                    trailingIcon  = {
-                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
-                    },
-                    modifier      = Modifier
-                        .menuAnchor()
-                        .fillMaxWidth(),
-                    singleLine    = true,
-                    shape         = MaterialTheme.shapes.medium
-                )
-                ExposedDropdownMenu(
-                    expanded          = dropdownExpanded,
-                    onDismissRequest  = { dropdownExpanded = false }
-                ) {
-                    // Voce "Tutti"
-                    DropdownMenuItem(
-                        text    = { Text("Tutti") },
-                        onClick = { onCustomerSelect(null); dropdownExpanded = false }
+                // Ricerca Device
+                TextField(
+                    value = state.searchQuery,
+                    onValueChange = onSearchChange,
+                    modifier = Modifier.weight(1.1f),
+                    placeholder = { Text("Cerca...", fontSize = 12.sp, color = contentColor.copy(alpha = 0.5f)) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp)) },
+                    singleLine = true,
+                    textStyle = TextStyle(fontSize = 12.sp, color = contentColor),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = contentColor,
+                        unfocusedTextColor = contentColor
                     )
-                    CUSTOMERS.forEach { customer ->
-                        DropdownMenuItem(
-                            text    = { Text(customer) },
-                            onClick = { onCustomerSelect(customer); dropdownExpanded = false }
+                )
+
+                // Divisore verticale
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(24.dp)
+                        .background(contentColor.copy(alpha = 0.2f))
+                )
+
+                // Filtro Cliente
+                var dropdownExpanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = dropdownExpanded,
+                    onExpandedChange = { dropdownExpanded = it },
+                    modifier = Modifier.weight(0.9f)
+                ) {
+                    TextField(
+                        value = state.selectedCustomer ?: "Clienti",
+                        onValueChange = {},
+                        readOnly = true,
+                        placeholder = { Text("Clienti", fontSize = 12.sp, color = contentColor.copy(alpha = 0.5f)) },
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp)) },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
+                        },
+                        textStyle = TextStyle(fontSize = 12.sp, color = contentColor),
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            focusedTextColor = contentColor,
+                            unfocusedTextColor = contentColor
                         )
+                    )
+                    ExposedDropdownMenu(
+                        expanded = dropdownExpanded,
+                        onDismissRequest = { dropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Tutti i clienti") },
+                            onClick = { onCustomerSelect(null); dropdownExpanded = false }
+                        )
+                        CUSTOMERS.forEach { customer ->
+                            DropdownMenuItem(
+                                text = { Text(customer) },
+                                onClick = { onCustomerSelect(customer); dropdownExpanded = false }
+                            )
+                        }
                     }
                 }
             }
@@ -199,11 +308,12 @@ fun SensorScreen(
                     verticalArrangement   = Arrangement.Center,
                     horizontalAlignment   = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = contentColor)
                     Text(
                         text     = "Caricamento dispositivi...",
                         modifier = Modifier.padding(top = 12.dp),
-                        style    = MaterialTheme.typography.bodyMedium
+                        style    = MaterialTheme.typography.bodyMedium,
+                        color    = contentColor
                     )
                 }
             }
@@ -233,7 +343,8 @@ fun SensorScreen(
                             .align(Alignment.CenterHorizontally)
                             .padding(bottom = 8.dp)
                             .size(24.dp),
-                        strokeWidth = 2.dp
+                        strokeWidth = 2.dp,
+                        color = contentColor
                     )
                 }
 
@@ -243,7 +354,7 @@ fun SensorScreen(
                         text     = "Nessun device trovato.",
                         modifier = Modifier.padding(top = 16.dp),
                         style    = MaterialTheme.typography.bodyMedium,
-                        color    = MaterialTheme.colorScheme.onSurfaceVariant
+                        color    = contentColor.copy(alpha = 0.7f)
                     )
                 } else {
                     LazyColumn(
@@ -252,94 +363,175 @@ fun SensorScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(list) { device ->
-                            DeviceCard(device = device)
+                            DeviceCard(
+                                device = device, 
+                                onClick = { onDeviceClick(device.id) },
+                                isDarkMode = actualDarkMode
+                            )
                         }
                     }
+                }
+            }
+        }
+    } // fine Column
+    } // fine Box sfondo
+}
+
+// ── Card singolo device ───────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeviceCard(device: Device, onClick: () -> Unit, isDarkMode: Boolean) {
+    val cardOverlay = if (isDarkMode) Color.Black.copy(alpha = 0.50f) else Color.Transparent
+    val textPrimary = if (isDarkMode) Color.White else Color.Black
+    val deviceNameColor = if (isDarkMode) ColorDeviceName else Color(0xFF1B5E20) // Verde più scuro in Light Mode
+    
+    Card(
+        modifier  = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDarkMode) 3.dp else 6.dp),
+        shape     = MaterialTheme.shapes.medium,
+        colors    = CardDefaults.cardColors(containerColor = Color.Transparent),
+        onClick   = onClick
+    ) {
+        Box {
+            // Immagine di sfondo
+            Image(
+                painter            = painterResource(R.drawable.sfondotauanito),
+                contentDescription = null,
+                contentScale       = ContentScale.Crop,
+                modifier           = Modifier.matchParentSize()
+            )
+            // Overlay dinamico
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(cardOverlay)
+            )
+            // Contenuto
+            Column(modifier = Modifier.padding(14.dp)) {
+
+                // Nome device + indicatore batteria
+                Row(
+                    modifier              = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    OutlinedText(
+                        text       = device.name,
+                        style      = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color      = deviceNameColor,
+                        isDarkMode = isDarkMode,
+                        modifier   = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    BatteryIndicator(level = device.batteryLevel, voltage = device.voltage)
+                }
+
+                // Timestamp
+                if (!device.timestamp.isNullOrBlank()) {
+                    OutlinedText(
+                        text       = device.timestamp,
+                        style      = MaterialTheme.typography.bodySmall,
+                        color      = textPrimary.copy(alpha = 0.7f),
+                        isDarkMode = isDarkMode,
+                        modifier   = Modifier.padding(top = 3.dp)
+                    )
+                }
+
+                Divider(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    color = textPrimary.copy(alpha = 0.1f)
+                )
+
+                // Letture sensori
+                device.readings.forEach { reading ->
+                    SensorRow(reading = reading, isDarkMode = isDarkMode)
                 }
             }
         }
     }
 }
 
-// ── Card singolo device ───────────────────────────────────────────────────────
-@Composable
-private fun DeviceCard(device: Device) {
-    Card(
-        modifier  = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
-        shape     = MaterialTheme.shapes.medium,
-        colors    = CardDefaults.cardColors(containerColor = Color(0xFF025669))
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-
-            // Nome device + indicatore batteria
-            Row(
-                modifier              = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically
-            ) {
-                Text(
-                    text       = device.name,
-                    style      = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color      = ColorDeviceName,
-                    modifier   = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                BatteryIndicator(level = device.batteryLevel, voltage = device.voltage)
-            }
-
-            // Timestamp
-            if (!device.timestamp.isNullOrBlank()) {
-                Text(
-                    text     = device.timestamp,
-                    style    = MaterialTheme.typography.bodySmall,
-                    color    = Color.White.copy(alpha = 0.75f),
-                    modifier = Modifier.padding(top = 3.dp)
-                )
-            }
-
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // Letture sensori
-            device.readings.forEach { reading ->
-                SensorRow(reading = reading)
-            }
+// ── Giudizio qualità aria ─────────────────────────────────────────────────────
+private fun sensorComment(name: String, rawValue: String): Pair<String, Color>? {
+    val cleanedValue = rawValue.replace(".", "").replace(",", ".")
+    val n = cleanedValue.trim().toDoubleOrNull() ?: return null
+    return when {
+        name.contains("CO2", ignoreCase = true) -> when {
+            n <= 600  -> "Ottimale"   to Color(0xFF4CAF50)
+            n <= 1000 -> "Buono"      to Color(0xFF8BC34A)
+            n <= 1500 -> "Attenzione" to Color(0xFFFFC107)
+            n <= 2000 -> "Cattivo"    to Color(0xFFFF9800)
+            else      -> "Pericoloso" to Color(0xFFF44336)
         }
+        name.contains("iaq", ignoreCase = true) -> when {
+            n <= 50  -> "Eccellente"      to Color(0xFF4CAF50)
+            n <= 100 -> "Buono"           to Color(0xFF8BC34A)
+            n <= 150 -> "Liev. inquinato" to Color(0xFFFFC107)
+            n <= 200 -> "Mod. inquinato"  to Color(0xFFFF9800)
+            n <= 300 -> "Fort. inquinato" to Color(0xFFFF5722)
+            else     -> "Pericoloso"      to Color(0xFFF44336)
+        }
+        name.contains("Press", ignoreCase = true) -> when {
+            n > 1020 -> "Alta"    to Color(0xFF29B6F6)
+            n >= 1000 -> "Normale" to Color(0xFF4CAF50)
+            else      -> "Bassa"   to Color(0xFFFFB300)
+        }
+        else -> null
     }
 }
 
-// ── Riga sensore con colore ───────────────────────────────────────────────────
+// ── Riga sensore con stile Glassmorphism ─────────────────────────────────────
 @Composable
-private fun SensorRow(reading: SensorReading) {
+private fun SensorRow(reading: SensorReading, isDarkMode: Boolean) {
+    val textPrimary = if (isDarkMode) Color.White else Color.Black
     val labelColor = when {
         reading.name.contains("Temp",  ignoreCase = true) -> ColorTemperatura
         reading.name.contains("Umid",  ignoreCase = true) -> ColorUmidita
         reading.name.contains("Press", ignoreCase = true) -> ColorPressione
-        reading.name.contains("CO2",   ignoreCase = true) -> ColorCO2
-        reading.name.contains("iaq",   ignoreCase = true) -> ColorIaq
-        else -> Color.White
+        reading.name.contains("CO2",   ignoreCase = true) -> if (isDarkMode) ColorCO2 else Color(0xFF455A64)
+        reading.name.contains("iaq",   ignoreCase = true) -> if (isDarkMode) ColorIaq else Color(0xFF37474F)
+        else -> textPrimary
     }
-    Row(
-        modifier              = Modifier
+    val comment = sensorComment(reading.name, reading.value)
+
+    Surface(
+        color = if (isDarkMode) Color.White.copy(alpha = 0.03f) else Color.White.copy(alpha = 0.65f),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment     = Alignment.CenterVertically
+            .padding(vertical = 2.dp)
     ) {
-        Text(
-            text       = reading.name,
-            style      = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color      = labelColor
-        )
-        Text(
-            text       = if (reading.unit != null) "${reading.value} ${reading.unit}"
-                         else reading.value,
-            style      = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            color      = Color.White
-        )
+        Row(
+            modifier              = Modifier
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically
+        ) {
+            Text(
+                text       = reading.name,
+                style      = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color      = labelColor
+            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text       = if (reading.unit != null) "${reading.value} ${reading.unit}"
+                                 else reading.value,
+                    style      = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color      = textPrimary
+                )
+                if (comment != null) {
+                    Text(
+                        text       = comment.first,
+                        style      = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color      = comment.second
+                    )
+                }
+            }
+        }
     }
 }
 

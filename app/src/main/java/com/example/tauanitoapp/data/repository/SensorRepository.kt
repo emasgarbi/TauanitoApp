@@ -1,5 +1,7 @@
 package com.example.tauanitoapp.data.repository
 
+import android.content.Context
+import android.util.Log
 import com.example.tauanitoapp.data.model.BatteryLevel
 import com.example.tauanitoapp.data.model.Device
 import com.example.tauanitoapp.data.model.SensorReading
@@ -8,93 +10,118 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 
-class SensorRepository {
+class SensorRepository(context: Context) {
 
-    private val webClient = NetworkModule.webClient
+    private val webClient = NetworkModule.getWebClient(context)
 
     suspend fun login(email: String, password: String) = withContext(Dispatchers.IO) {
         val csrfToken = webClient.getCsrfToken()
         val ok = webClient.submitLogin(email, password, csrfToken)
-        if (!ok) throw Exception("Email o password non corretti")
+        if (!ok) throw Exception("Email o password errati")
+    }
+
+    /** Verifica se la sessione salvata è ancora valida caricando la home */
+    suspend fun isSessionValid(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val html = webClient.fetchHomeHtml()
+            html.contains("Elenco device", ignoreCase = true) || html.contains("Dashboard")
+        } catch (e: Exception) {
+            false
+        }
     }
 
     suspend fun getDevices(): List<Device> = withContext(Dispatchers.IO) {
         val html = webClient.fetchHomeHtml()
+        if (html.isBlank()) return@withContext emptyList<Device>()
         parseHomeHtml(html)
+    }
+
+    suspend fun getDeviceHistory(deviceId: String): com.example.tauanitoapp.data.model.DeviceHistory = withContext(Dispatchers.IO) {
+        val html = webClient.fetchDeviceHtml(deviceId)
+        parseHistoryHtml(deviceId, html)
+    }
+
+    suspend fun downloadDeviceCsv(deviceId: String): ByteArray = withContext(Dispatchers.IO) {
+        webClient.downloadCsv(deviceId)
+    }
+
+    private fun parseHistoryHtml(deviceId: String, html: String): com.example.tauanitoapp.data.model.DeviceHistory {
+        val doc = Jsoup.parse(html)
+        val deviceName = doc.select("h1, h2, h3, .h1, .h2, .h3").firstOrNull()?.text()?.trim() ?: "Device $deviceId"
+        val records = mutableListOf<com.example.tauanitoapp.data.model.HistoryRecord>()
+
+        val table = doc.select("table").firstOrNull()
+        if (table != null) {
+            val headers = table.select("thead th").map { it.text().trim() }
+            val rows = table.select("tbody tr")
+            for (row in rows) {
+                val cols = row.select("td")
+                if (cols.isNotEmpty()) {
+                    val timestamp = cols.firstOrNull()?.text()?.trim() ?: ""
+                    val readings = mutableListOf<SensorReading>()
+                    for (i in 1 until cols.size) {
+                        val header = headers.getOrNull(i) ?: "Sensore $i"
+                        val (value, unit) = splitValueAndUnit(cols[i].text().trim())
+                        readings.add(SensorReading(header, value, unit))
+                    }
+                    records.add(com.example.tauanitoapp.data.model.HistoryRecord(timestamp, readings))
+                }
+            }
+        }
+        return com.example.tauanitoapp.data.model.DeviceHistory(deviceId, deviceName, records)
     }
 
     private fun parseHomeHtml(html: String): List<Device> {
         val doc = Jsoup.parse(html)
         val devices = mutableListOf<Device>()
-
-        for (card in doc.select(".device-card")) {
-            // Nome device: <a class="h4"> + ID estratto dall'href /device/{id}/dati
-            val deviceLink = card.select("a.h4").firstOrNull() ?: continue
-            val deviceName = deviceLink.text().trim().takeIf { it.isNotBlank() } ?: continue
-            val deviceUrl  = deviceLink.attr("href")
-            val deviceId   = Regex("/device/([^/]+)/").find(deviceUrl)
-                ?.groupValues?.getOrNull(1)?.trim()
-                ?: deviceName
-
-            // Timestamp: primo <strong> nel card
-            val timestamp = card.select("strong").firstOrNull()?.text()?.trim()
-
-            // Batteria: span con classe "battery" + sottoclasse "full/half/low/empty"
-            val batterySpan = card.select("span.battery").firstOrNull()
-            val batteryLevel = when {
-                batterySpan?.hasClass("full")  == true -> BatteryLevel.FULL
-                batterySpan?.hasClass("half")  == true -> BatteryLevel.HALF
-                batterySpan?.hasClass("low")   == true -> BatteryLevel.LOW
-                batterySpan?.hasClass("empty") == true -> BatteryLevel.EMPTY
-                else -> BatteryLevel.UNKNOWN
+        
+        val allCards = doc.select(".device-card, .card")
+        val cards = mutableListOf<org.jsoup.nodes.Element>()
+        for (card in allCards) {
+            if (card.select("a.h4, .h4").isNotEmpty()) {
+                cards.add(card)
             }
-
-            // Voltaggio: <strong> nel parent di span.battery (es. "3,56 V")
-            val voltage = batterySpan
-                ?.parent()
-                ?.select("strong")
-                ?.firstOrNull()
-                ?.text()
-                ?.replace('\u00A0', ' ')
-                ?.trim()
-
-            // Cliente: testo dentro <i data-toggle="tooltip"> nel formato "Modello  - Cliente"
-            val modelCustomerText = card
-                .select("p i[data-toggle=tooltip]").firstOrNull()?.text()?.trim()
-            val customer = modelCustomerText
-                ?.substringAfterLast(" - ")?.trim()?.takeIf { it.isNotBlank() }
-
-            // Letture sensori dal div deviceDetails{id}
-            val detailsDiv = card.select("[id^=deviceDetails]").firstOrNull() ?: continue
-            val readings = mutableListOf<SensorReading>()
-
-            for (row in detailsDiv.select("div.row")) {
-                val nameCol  = row.select(".col").firstOrNull() ?: continue
-                val valueCol = row.select(".col-auto").firstOrNull() ?: continue
-
-                val label     = nameCol.text().trim()
-                val rawValue  = valueCol.select("strong").firstOrNull()?.text() ?: continue
-                val cleanValue = rawValue.replace('\u00A0', ' ').trim()
-
-                if (label.isBlank() || cleanValue.isBlank()) continue
-
-                val (value, unit) = splitValueAndUnit(cleanValue)
-                readings.add(SensorReading(name = label, value = value, unit = unit))
-            }
-
-            devices.add(
-                Device(
-                    id           = deviceId,
-                    name         = deviceName,
-                    customer     = customer,
-                    timestamp    = timestamp,
-                    voltage      = voltage,
-                    batteryLevel = batteryLevel,
-                    readings     = readings
-                )
-            )
         }
 
+        for (card in cards) {
+            try {
+                val deviceLink = card.select("a.h4, .h4 a").firstOrNull() ?: continue
+                val deviceName = deviceLink.text().trim()
+                val deviceUrl  = deviceLink.attr("href")
+                val deviceId   = Regex("/device/([^/]+)/").find(deviceUrl)?.groupValues?.getOrNull(1) ?: deviceName
+
+                val timestamp = card.select("strong").firstOrNull()?.text()?.trim()
+                val batterySpan = card.select("span.battery").firstOrNull()
+                val voltage = batterySpan?.parent()?.select("strong")?.firstOrNull()?.text()?.replace('\u00A0', ' ')?.trim()
+
+                val voltageValue = voltage?.replace(",", ".")?.substringBefore(" ")?.toDoubleOrNull()
+                val batteryLevel = when {
+                    batterySpan?.hasClass("empty") == true || (voltageValue != null && voltageValue < 3.35) -> BatteryLevel.EMPTY
+                    batterySpan?.hasClass("low")   == true || (voltageValue != null && voltageValue < 3.50) -> BatteryLevel.LOW
+                    batterySpan?.hasClass("half")  == true -> BatteryLevel.HALF
+                    batterySpan?.hasClass("full")  == true -> BatteryLevel.FULL
+                    else -> BatteryLevel.UNKNOWN
+                }
+
+                val modelCustomerText = card.select("p i[data-toggle=tooltip]").firstOrNull()?.text()?.trim()
+                val customer = modelCustomerText?.substringAfterLast(" - ")?.trim()
+
+                val detailsDiv = card.select("[id^=deviceDetails]").firstOrNull()
+                val readings = mutableListOf<SensorReading>()
+                if (detailsDiv != null) {
+                    for (row in detailsDiv.select("div.row")) {
+                        val label = row.select(".col").firstOrNull()?.text()?.trim() ?: continue
+                        val rawValue = row.select(".col-auto strong").firstOrNull()?.text()?.trim() ?: continue
+                        val (value, unit) = splitValueAndUnit(rawValue)
+                        readings.add(SensorReading(label, value, unit))
+                    }
+                }
+
+                devices.add(Device(deviceId, deviceName, customer, timestamp, voltage, batteryLevel, readings, null, null))
+            } catch (e: Exception) {
+                Log.e("TauanitoRepo", "Errore parsing card: ${e.message}")
+            }
+        }
         return devices
     }
 
@@ -103,9 +130,8 @@ class SensorRepository {
         return when {
             trimmed.endsWith("%") -> Pair(trimmed.dropLast(1).trim(), "%")
             ' ' in trimmed -> {
-                val idx  = trimmed.lastIndexOf(' ')
-                val unit = trimmed.substring(idx + 1).trim()
-                Pair(trimmed.substring(0, idx).trim(), unit.ifBlank { null })
+                val idx = trimmed.lastIndexOf(' ')
+                Pair(trimmed.substring(0, idx).trim(), trimmed.substring(idx + 1).trim().ifBlank { null })
             }
             else -> Pair(trimmed, null)
         }

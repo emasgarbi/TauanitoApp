@@ -7,64 +7,81 @@ import org.jsoup.Jsoup
 
 class TauanitoWebClient(private val client: OkHttpClient) {
 
-    /**
-     * GET /login → estrae il CSRF token (_token) dal form HTML.
-     */
+    private val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+
     fun getCsrfToken(): String {
         val request = Request.Builder()
             .url("${NetworkModule.BASE_URL}/login")
+            .header("User-Agent", USER_AGENT)
             .get()
             .build()
+            
         val html = client.newCall(request).execute().use { resp ->
-            resp.body?.string() ?: throw Exception("Pagina di login vuota")
+            resp.body?.string() ?: throw Exception("Errore connessione")
         }
         val doc = Jsoup.parse(html)
         return doc.select("input[name=_token]").firstOrNull()?.attr("value")
             ?: doc.select("meta[name=csrf-token]").firstOrNull()?.attr("content")
-            ?: throw Exception("CSRF token non trovato nella pagina di login")
+            ?: throw Exception("Token non trovato")
     }
 
-    /**
-     * POST /loginA con form-encoded. Ritorna true se il redirect va a /home (login riuscito).
-     */
     fun submitLogin(email: String, password: String, csrfToken: String): Boolean {
         val body = FormBody.Builder()
             .add("_token", csrfToken)
             .add("email", email)
             .add("password", password)
             .build()
-        val noRedirectClient = client.newBuilder().followRedirects(false).build()
+        
         val request = Request.Builder()
             .url("${NetworkModule.BASE_URL}/loginA")
+            .header("User-Agent", USER_AGENT)
+            .header("Referer", "${NetworkModule.BASE_URL}/login")
             .post(body)
             .build()
-        noRedirectClient.newCall(request).execute().use { resp ->
-            val location = resp.header("Location") ?: ""
-            return location.contains("home")
+            
+        return client.newCall(request).execute().use { resp ->
+            val finalUrl = resp.request.url.toString()
+            // Login ok se siamo su home o dashboard
+            finalUrl.contains("home") || finalUrl.contains("dashboard") || resp.isSuccessful
         }
     }
 
-    /**
-     * GET /home → ritorna l'HTML della dashboard (richiede sessione attiva).
-     */
     fun fetchHomeHtml(): String {
+        return fetchUrl("${NetworkModule.BASE_URL}/home")
+    }
+
+    fun fetchDeviceHtml(deviceId: String): String {
+        return fetchUrl("${NetworkModule.BASE_URL}/device/$deviceId/dati")
+    }
+
+    fun downloadCsv(deviceId: String): ByteArray {
         val request = Request.Builder()
-            .url("${NetworkModule.BASE_URL}/home")
+            .url("${NetworkModule.BASE_URL}/esportaUltimi_ajax.php?d=$deviceId&devtemp=1&devum=1&devpress=1&devco2=1&iaq=1&modello=17")
+            .header("User-Agent", USER_AGENT)
+            .header("Referer", "${NetworkModule.BASE_URL}/device/$deviceId/dati")
             .get()
             .build()
+        
         return client.newCall(request).execute().use { resp ->
-            // OkHttp segue i redirect: se l'URL finale è /login la sessione è scaduta
-            if (resp.request.url.toString().contains("/login")) {
-                throw Exception("Sessione scaduta, effettua di nuovo il login")
+            if (!resp.isSuccessful) throw Exception("Download fallito")
+            resp.body?.bytes() ?: throw Exception("File vuoto")
+        }
+    }
+
+    private fun fetchUrl(url: String): String {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .get()
+            .build()
+            
+        return client.newCall(request).execute().use { resp ->
+            val finalUrl = resp.request.url.toString()
+            if (finalUrl.contains("/login") && !url.contains("/login")) {
+                throw Exception("Sessione scaduta")
             }
-            if (!resp.isSuccessful)
-                throw Exception("Errore server: ${resp.code}")
-            val html = resp.body?.string() ?: throw Exception("Risposta vuota dal server")
-            // Ulteriore controllo: se l'HTML contiene il form di login siamo stati reindirizzati
-            if (html.contains("loginA") && !html.contains("Elenco device", ignoreCase = true)) {
-                throw Exception("Sessione scaduta, effettua di nuovo il login")
-            }
-            html
+            if (!resp.isSuccessful) throw Exception("Errore server (${resp.code})")
+            resp.body?.string() ?: ""
         }
     }
 }

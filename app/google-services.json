@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "3776178811",
+    "project_id": "tauanito",
+    "storage_bucket": "tauanito.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:3776178811:android:200ef488209d6421e750de",
+        "android_client_info": {
+          "package_name": "com.Taua.TauanitoApp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJQhD3WBJqEsiAKU0uNqSy31GN8ziQOoA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

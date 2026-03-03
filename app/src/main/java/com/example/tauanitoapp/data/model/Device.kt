@@ -15,5 +15,18 @@ data class Device(
     val timestamp: String?,
     val voltage: String?,
     val batteryLevel: BatteryLevel,
+    val readings: List<SensorReading>,
+    val latitude: Double? = null,
+    val longitude: Double? = null
+)
+
+data class HistoryRecord(
+    val timestamp: String,
     val readings: List<SensorReading>
+)
+
+data class DeviceHistory(
+    val deviceId: String,
+    val deviceName: String,
+    val records: List<HistoryRecord>
 )

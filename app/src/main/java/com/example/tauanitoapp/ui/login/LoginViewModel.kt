@@ -1,52 +1,120 @@
 package com.example.tauanitoapp.ui.login
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.tauanitoapp.data.repository.SensorRepository
+import com.example.tauanitoapp.utils.BiometricHelper
+import com.example.tauanitoapp.utils.SecurePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 data class LoginUiState(
-    val email: String = "",
-    val password: String = "",
-    val isLoading: Boolean = false,
-    val errorMessage: String? = null,
-    val isLoggedIn: Boolean = false
+    val email:               String  = "",
+    val password:            String  = "",
+    val isLoading:           Boolean = false,
+    val isLoggedIn:          Boolean = false,
+    val errorMessage:        String? = null,
+    // Visibile solo dopo almeno un login manuale nella sessione corrente
+    val showBiometricButton: Boolean = false
 )
 
-class LoginViewModel(
-    private val repository: SensorRepository = SensorRepository()
-) : ViewModel() {
+class LoginViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        // Flag di sessione: false ad ogni avvio a freddo, true dopo il primo login manuale.
+        // Sopravvive alle ricreazioni del ViewModel (logout/login nello stesso processo).
+        private var sessionLoginCompleted = false
+    }
+
+    private val repository = SensorRepository(application)
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState
 
-    fun onEmailChange(newEmail: String) {
-        _uiState.value = _uiState.value.copy(email = newEmail, errorMessage = null)
+    init {
+        // Se nella stessa sessione si è già fatto un login, il pulsante biometrico
+        // è disponibile (es. dopo logout e ritorno alla schermata di login)
+        if (sessionLoginCompleted &&
+            SecurePreferences.isBiometricEnabled(getApplication()) &&
+            BiometricHelper.isBiometricAvailable(getApplication())
+        ) {
+            _uiState.value = _uiState.value.copy(showBiometricButton = true)
+        }
     }
 
-    fun onPasswordChange(newPassword: String) {
-        _uiState.value = _uiState.value.copy(password = newPassword, errorMessage = null)
+    fun onEmailChange(newValue: String) {
+        _uiState.value = _uiState.value.copy(email = newValue, errorMessage = null)
+    }
+
+    fun onPasswordChange(newValue: String) {
+        _uiState.value = _uiState.value.copy(password = newValue, errorMessage = null)
     }
 
     fun login() {
-        val current = _uiState.value
-        if (current.email.isBlank() || current.password.isBlank()) {
-            _uiState.value = current.copy(errorMessage = "Email e password sono obbligatorie.")
+        val email = _uiState.value.email
+        val password = _uiState.value.password
+
+        if (email.isBlank() || password.isBlank()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Inserisci email e password")
             return
         }
 
         viewModelScope.launch {
-            _uiState.value = current.copy(isLoading = true, errorMessage = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             try {
-                repository.login(current.email, current.password)
-                _uiState.value = _uiState.value.copy(isLoading = false, isLoggedIn = true)
-            } catch (e: Exception) {
+                repository.login(email, password)
+                SecurePreferences.saveCredentials(getApplication(), email, password)
+
+                // Primo login manuale riuscito: sblocca il pulsante biometrico per questa sessione
+                sessionLoginCompleted = true
+                val showBiometric = SecurePreferences.isBiometricEnabled(getApplication()) &&
+                    BiometricHelper.isBiometricAvailable(getApplication())
+
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    errorMessage = e.message ?: "Login fallito"
+                    isLoggedIn = true,
+                    showBiometricButton = showBiometric
                 )
+            } catch (e: Exception) {
+                val msg = when {
+                    e is java.net.UnknownHostException -> "Impossibile raggiungere il server. Verifica la connessione internet."
+                    e.message?.contains("timeout", ignoreCase = true) == true -> "Connessione lenta. Riprova."
+                    e.message?.contains("Email o password") == true -> e.message!!
+                    else -> "Errore di connessione. Riprova."
+                }
+                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = msg)
+            }
+        }
+    }
+
+    /**
+     * Login rapido tramite biometria. Disponibile solo dopo il primo login manuale della sessione.
+     */
+    fun loginWithBiometrics(onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            try {
+                val devices = repository.getDevices()
+                if (devices.isNotEmpty() || repository.isSessionValid()) {
+                    sessionLoginCompleted = true
+                    _uiState.value = _uiState.value.copy(isLoading = false, isLoggedIn = true)
+                    onSuccess()
+                    return@launch
+                }
+
+                val email = SecurePreferences.getSavedEmail(getApplication())
+                val password = SecurePreferences.getSavedPassword(getApplication())
+                if (email != null && password != null) {
+                    repository.login(email, password)
+                    sessionLoginCompleted = true
+                    _uiState.value = _uiState.value.copy(isLoading = false, isLoggedIn = true)
+                    onSuccess()
+                } else {
+                    _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = "Credenziali non trovate")
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = "Sessione scaduta: inserisci password")
             }
         }
     }
