@@ -1,0 +1,13 @@
+ELENCO PERCORSI FILE CERTIFICATO (JKS)
+
+1. Certificato Corretto (SHA1: D2:96:BA:11:33:DA:79:B9:F1:5C:57:4B:DF:22:13:C9:C2:1A:7B:0D):
+   - Originale: C:\Users\elesg\AndroidStudioProjects\TauanitoApp\app\tauanito_release.jks
+   - Copia Sicurezza: C:\Users\elesg\AndroidStudioProjects\TauanitoApp\Certificato\tauanito_release.jks
+
+2. Certificato Alternativo (SHA1: 9C:40:7E:47:5C:55:76:F4:F3:4B:92:9E:3E:E7:67:4C:20:43:0A:46):
+   - Percorso: C:\Users\elesg\OneDrive - Alma Mater Studiorum Università di Bologna\Desktop\TauanitoApp\tauanito.jks
+
+3. Altri file JKS individuati nel sistema:
+   - C:\Users\elesg\Downloads\Charlie Houpert - Charisma University\testkeystore.jks
+
+Nota: L'App Bundle è configurato per utilizzare il file al percorso #1.
