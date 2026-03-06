@@ -76,8 +76,16 @@ class MainActivity : FragmentActivity() {
             Log.d("Tauanito", "Google Play Services non disponibile (es. GrapheneOS) — Firebase disabilitato")
         }
 
+        // Se è la PRIMISSIMA VOLTA che l'app viene aperta (dopo installazione o pulizia dati),
+        // resettiamo tutto e impostiamo la biometria a OFF per sicurezza.
+        if (!SecurePreferences.isInitialized(this)) {
+            SecurePreferences.clearCredentials(this)
+            SecurePreferences.setBiometricEnabled(this, false)
+            SecurePreferences.setInitialized(this) // Segniamo che l'app è stata inizializzata
+        }
+
         enableEdgeToEdge()
-        
+
         setContent {
             TauanitoApp(this)
         }
@@ -153,7 +161,7 @@ fun TauanitoApp(activity: FragmentActivity) {
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.titleLarge
                     )
-                    HorizontalDivider()
+                    Divider()
                     
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Home, contentDescription = null) },

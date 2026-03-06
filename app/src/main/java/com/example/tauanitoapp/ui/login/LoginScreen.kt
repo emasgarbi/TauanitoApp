@@ -38,17 +38,28 @@ fun LoginRoute(
     val context = LocalContext.current
     val activity = context as? FragmentActivity
 
-    // Auto-trigger biometrico: si attiva se l'utente aveva già abilitato la biometria
-    // in una sessione precedente (hasLoggedInOnce=true e isBiometricEnabled=true nelle prefs).
-    // Su prima installazione assoluta entrambi sono false → non si attiva.
-    LaunchedEffect(Unit) {
-        val hasLoggedIn      = SecurePreferences.hasLoggedInOnce(context)
-        val biometricEnabled = SecurePreferences.isBiometricEnabled(context)
-        if (activity != null && hasLoggedIn && biometricEnabled && BiometricHelper.isBiometricAvailable(context)) {
+    // Usiamo l'activity come owner per condividere lo stesso SettingsViewModel del MainActivity/Drawer
+    val settingsViewModel: com.example.tauanitoapp.ui.theme.SettingsViewModel = if (activity != null) {
+        viewModel(activity)
+    } else {
+        viewModel()
+    }
+    
+    val isBiometricEnabled by settingsViewModel.isBiometricEnabled.collectAsState()
+
+    // AUTO-ATTIVAZIONE: Si attiva solo se l'utente ha scritto l'email corretta e l'opzione è attiva
+    LaunchedEffect(state.email, isBiometricEnabled) {
+        val savedEmail = SecurePreferences.getSavedEmail(context)
+        val savedPassword = SecurePreferences.getSavedPassword(context)
+        
+        val isEmailMatching = state.email.isNotBlank() && 
+                             state.email.trim().equals(savedEmail?.trim(), ignoreCase = true)
+
+        if (isBiometricEnabled && isEmailMatching && activity != null && !savedPassword.isNullOrBlank()) {
             BiometricHelper.showBiometricPrompt(
-                activity  = activity,
+                activity = activity,
                 onSuccess = { viewModel.loginWithBiometrics(onLoginSuccess) },
-                onError   = { /* l'utente può usare la password manualmente */ }
+                onError = { }
             )
         }
     }
@@ -63,6 +74,7 @@ fun LoginRoute(
         onEmailChange    = viewModel::onEmailChange,
         onPasswordChange = viewModel::onPasswordChange,
         onLoginClick     = viewModel::login,
+        isBiometricEnabledOption = isBiometricEnabled,
         onBiometricClick = {
             if (activity != null) {
                 BiometricHelper.showBiometricPrompt(
@@ -81,6 +93,7 @@ fun LoginScreen(
     onEmailChange:    (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick:     () -> Unit,
+    isBiometricEnabledOption: Boolean,
     onBiometricClick: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -195,13 +208,18 @@ fun LoginScreen(
                     }
                 }
 
-                // Pulsante biometrico: visibile solo se l'utente ha già fatto login
-                // almeno una volta e ha abilitato esplicitamente la biometria
+                // Pulsante biometrico: visibile immediatamente se l'opzione è attiva e ci sono credenziali salvate
                 val currentContext = LocalContext.current
-                val isDataSaved    = SecurePreferences.hasLoggedInOnce(currentContext)
-                val isEnabled      = SecurePreferences.isBiometricEnabled(currentContext)
-
-                if (BiometricHelper.isBiometricAvailable(currentContext) && isDataSaved && isEnabled) {
+                val savedEmail     = SecurePreferences.getSavedEmail(currentContext)
+                val savedPassword  = SecurePreferences.getSavedPassword(currentContext)
+                val hasLoggedIn    = SecurePreferences.hasLoggedInOnce(currentContext)
+                
+                val hasCredentials = hasLoggedIn && !savedEmail.isNullOrBlank() && !savedPassword.isNullOrBlank()
+                
+                // Mostra il pulsante se l'opzione è attiva, indipendentemente da cosa è scritto nei campi
+                if (BiometricHelper.isBiometricAvailable(currentContext) && 
+                    hasCredentials &&
+                    isBiometricEnabledOption) {
                     IconButton(
                         onClick  = onBiometricClick,
                         modifier = Modifier

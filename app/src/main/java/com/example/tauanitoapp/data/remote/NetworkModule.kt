@@ -13,7 +13,9 @@ class PersistentCookieJar(private val context: Context) : CookieJar {
     private val inMemoryCache = mutableListOf<Cookie>()
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        if (url.host == "www.tauanito.it") {
+        // Solo se ci sono cookie da salvare: evita di azzerare la sessione
+        // quando OkHttp chiama saveFromResponse con lista vuota (es. redirect /home)
+        if (url.host == "www.tauanito.it" && cookies.isNotEmpty()) {
             inMemoryCache.clear()
             inMemoryCache.addAll(cookies)
             SecurePreferences.saveCookies(context, cookies)

@@ -40,9 +40,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun toggleBiometric(enabled: Boolean) {
         SecurePreferences.setBiometricEnabled(getApplication(), enabled)
-        if (!enabled) {
-            SecurePreferences.clearCredentials(getApplication())
-        }
+        // Non cancelliamo le credenziali qui, servono per il login normale 
+        // e per poter riattivare la biometria più tardi se l'utente vuole.
         _isBiometricEnabled.value = enabled
     }
 }

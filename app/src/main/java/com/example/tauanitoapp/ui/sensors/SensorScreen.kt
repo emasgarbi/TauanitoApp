@@ -86,7 +86,7 @@ private val CUSTOMERS = listOf(
     "Gianfranco Silvestri", "Giorgio Prodi", "Heltyair", "Involve Group", "IPLUS",
     "IQC", "ITA", "Jonixair", "Logimatic", "Mario Sboarina",
     "Montanari Galletti", "Nuovamacut", "NUOVASORMU", "OBS", "OLTRE SRL",
-    "OPENGROUPITALIA", "Sanixair", "SAVIO", "Signify", "Strobilo",
+    "OPENGROUPITALIA", "Sala Borsa", "Sanixair", "SAVIO", "Signify", "Strobilo",
     "Taua", "TEST-ING", "Weishaupt"
 )
 
@@ -101,11 +101,9 @@ fun SensorRoute(
 ) {
     val state by viewModel.uiState.collectAsState()
 
-    // CARICAMENTO INTELLIGENTE: Avviamo solo quando entriamo nella rotta
+    // startAutoRefresh chiama refreshData() subito all'avvio, poi ogni N minuti.
+    // Non serve un refresh() separato: evita due richieste HTTP concorrenti al primo caricamento.
     LaunchedEffect(Unit) {
-        if (state.devices.isEmpty()) {
-            viewModel.refresh()
-        }
         viewModel.startAutoRefresh()
     }
 

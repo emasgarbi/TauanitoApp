@@ -34,6 +34,9 @@ object CustomerDeviceMap {
         "NUOVASORMU"                           to setOf("39"),
         "OBS"                                  to setOf("95", "104"),
         "OLTRE SRL"                            to setOf("126", "127", "128", "130", "131", "132"),
+        // Match per nome: tutti i device Sala Borsa hanno "(Sala borsa)" nel nome
+        // Tenuti anche gli ID numerici come fallback
+        "Sala Borsa"                           to setOf("97", "98", "105", "111", "112", "114", "Sala borsa"),
         "SAVIO"                                to setOf("56"),
         "Signify"                              to setOf("25"),
         "Strobilo"                             to setOf("58"),

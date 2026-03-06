@@ -74,18 +74,25 @@ class SensorRepository(context: Context) {
     private fun parseHomeHtml(html: String): List<Device> {
         val doc = Jsoup.parse(html)
         val devices = mutableListOf<Device>()
-        
-        val allCards = doc.select(".device-card, .card")
-        val cards = mutableListOf<org.jsoup.nodes.Element>()
-        for (card in allCards) {
-            if (card.select("a.h4, .h4").isNotEmpty()) {
-                cards.add(card)
-            }
+
+        // Selettore preciso: solo .device-card evita di catturare elementi annidati o generici
+        var cards = doc.select(".device-card")
+        // Fallback: se il sito non usa .device-card, cerca card con link a /device/
+        if (cards.isEmpty()) {
+            cards = doc.select(".card, .box").filter { card ->
+                card.select("a[href*=/device/]").isNotEmpty()
+            }.let { org.jsoup.select.Elements(it) }
         }
+        Log.d("TauanitoRepo", "Device cards trovate: ${cards.size}")
 
         for (card in cards) {
             try {
-                val deviceLink = card.select("a.h4, .h4 a").firstOrNull() ?: continue
+                // Estrazione link dispositivo con più fallback
+                val deviceLink = card.select("a.h4").firstOrNull()
+                    ?: card.select(".h4 a").firstOrNull()
+                    ?: card.select("h4 a").firstOrNull()
+                    ?: card.select("a[href*=/device/]").firstOrNull()
+                    ?: continue
                 val deviceName = deviceLink.text().trim()
                 val deviceUrl  = deviceLink.attr("href")
                 val deviceId   = Regex("/device/([^/]+)/").find(deviceUrl)?.groupValues?.getOrNull(1) ?: deviceName
@@ -122,6 +129,7 @@ class SensorRepository(context: Context) {
                 Log.e("TauanitoRepo", "Errore parsing card: ${e.message}")
             }
         }
+        Log.d("TauanitoRepo", "Device parsati: ${devices.size}")
         return devices
     }
 

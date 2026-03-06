@@ -62,24 +62,38 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             try {
-                val devices = repository.getDevices()
-                if (devices.isNotEmpty() || repository.isSessionValid()) {
+                // PRIMA PROVA: tenta di usare la sessione esistente (cookie)
+                val isSessionValid = try {
+                    val devices = repository.getDevices()
+                    devices.isNotEmpty() || repository.isSessionValid()
+                } catch (e: Exception) {
+                    false
+                }
+
+                if (isSessionValid) {
                     _uiState.value = _uiState.value.copy(isLoading = false, isLoggedIn = true)
                     onSuccess()
                     return@launch
                 }
 
+                // SECONDA PROVA: la sessione è scaduta o non valida, tentiamo il login con le credenziali salvate
                 val email = SecurePreferences.getSavedEmail(getApplication())
                 val password = SecurePreferences.getSavedPassword(getApplication())
+                
                 if (email != null && password != null) {
                     repository.login(email, password)
                     _uiState.value = _uiState.value.copy(isLoading = false, isLoggedIn = true)
                     onSuccess()
                 } else {
-                    _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = "Credenziali non trovate")
+                    _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = "Credenziali non trovate. Inserisci la password manualmente.")
                 }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = "Sessione scaduta: inserisci password")
+                val msg = when {
+                    e is java.net.UnknownHostException -> "Nessuna connessione internet"
+                    e.message?.contains("timeout", ignoreCase = true) == true -> "Timeout connessione"
+                    else -> "Sessione scaduta o errore di rete. Inserisci password manualmente."
+                }
+                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = msg)
             }
         }
     }
