@@ -393,7 +393,7 @@ private fun DeviceCard(device: Device, onClick: () -> Unit, isDarkMode: Boolean)
         Box {
             // Immagine di sfondo
             Image(
-                painter            = painterResource(R.drawable.immaginesfondo),
+                painter            = painterResource(R.drawable.sfondotauanito),
                 contentDescription = null,
                 contentScale       = ContentScale.Crop,
                 modifier           = Modifier.matchParentSize()

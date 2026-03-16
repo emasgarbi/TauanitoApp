@@ -47,6 +47,7 @@ private val GreenBorderColor   = Color(0xFF81C784).copy(alpha = 0.6f)
 fun HistoryRoute(
     deviceId: String,
     onBack: () -> Unit,
+    onNavigateToInsights: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -84,6 +85,7 @@ fun HistoryRoute(
         onBack = onBack,
         onRetry = viewModel::loadHistory,
         onDownloadCsv = viewModel::downloadCsv,
+        onNavigateToInsights = { onNavigateToInsights(deviceId) },
         modifier = modifier
     )
 }
@@ -95,6 +97,7 @@ fun HistoryScreen(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onDownloadCsv: () -> Unit,
+    onNavigateToInsights: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -128,7 +131,39 @@ fun HistoryScreen(
                     }
                 },
                 actions = {
-                    // ── PULSANTE VERDE A DESTRA ──────────────────────────
+                    // ── PULSANTE INSIGHTS ──────────────────────────
+                    if (state.history != null) {
+                        Surface(
+                            onClick = onNavigateToInsights,
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.Transparent,
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .height(30.dp)
+                                .shadow(3.dp, RoundedCornerShape(8.dp))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        brush = Brush.verticalGradient(
+                                            colors = listOf(Color(0xFF1976D2), Color(0xFF0D47A1))
+                                        )
+                                    )
+                                    .border(BorderStroke(1.dp, Color(0xFF64B5F6).copy(alpha = 0.6f)), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "INSIGHTS", 
+                                    color = Color.White, 
+                                    fontSize = 11.sp, 
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+                    }
+
+                    // ── PULSANTE VERDE CSV ──────────────────────────
                     if (state.isDownloading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(28.dp).padding(end = 12.dp), // Ingrandito

@@ -29,6 +29,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.tauanitoapp.data.repository.NotificationRepository
 import com.example.tauanitoapp.ui.history.HistoryRoute
+import com.example.tauanitoapp.ui.insights.InsightsRoute
 import com.example.tauanitoapp.ui.login.LoginRoute
 import com.example.tauanitoapp.ui.notifications.NotificationScreen
 import com.example.tauanitoapp.ui.sensors.SensorRoute
@@ -47,6 +48,7 @@ private const val ROUTE_WELCOME = "welcome"
 private const val ROUTE_LOGIN = "login"
 private const val ROUTE_SENSORS = "sensors"
 private const val ROUTE_HISTORY = "history/{deviceId}"
+private const val ROUTE_INSIGHTS = "insights/{deviceId}"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_NOTIFICATIONS = "notifications"
 
@@ -308,6 +310,17 @@ fun TauanitoApp(activity: FragmentActivity) {
                     composable(ROUTE_HISTORY) { backStackEntry ->
                         val deviceId = backStackEntry.arguments?.getString("deviceId") ?: ""
                         HistoryRoute(
+                            deviceId = deviceId,
+                            onBack = { navController.popBackStack() },
+                            onNavigateToInsights = { id ->
+                                navController.navigate("insights/$id")
+                            }
+                        )
+                    }
+
+                    composable(ROUTE_INSIGHTS) { backStackEntry ->
+                        val deviceId = backStackEntry.arguments?.getString("deviceId") ?: ""
+                        InsightsRoute(
                             deviceId = deviceId,
                             onBack = { navController.popBackStack() }
                         )
