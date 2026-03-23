@@ -5,7 +5,6 @@ plugins {
 }
 
 android {
-    // Ripristiniamo il namespace originale che funzionava su Motorola
     namespace = "com.example.tauanitoapp"
     compileSdk = 35
 
@@ -69,19 +68,20 @@ android {
 }
 
 dependencies {
+    // Firebase Core (per Messaging) - RIMOSSO FIREBASE-AI
+    implementation(platform(libs.firebase.bom))
+    implementation("com.google.firebase:firebase-messaging")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     
-    implementation(platform("androidx.compose:compose-bom:2024.02.01"))
+    implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
-    implementation(platform("com.google.firebase:firebase-bom:32.7.2"))
-    implementation("com.google.firebase:firebase-messaging-ktx")
-    
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.okhttp)

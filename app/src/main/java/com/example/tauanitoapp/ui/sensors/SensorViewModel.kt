@@ -19,8 +19,11 @@ data class SensorUiState(
     val devices: List<Device> = emptyList(),
     val searchQuery: String = "",
     val selectedCustomer: String? = null,
-    val showLowBatteryOnly: Boolean = false
+    val showLowBatteryOnly: Boolean = false,
+    val globalHealthScore: Int = 100,
+    val globalSummary: String = "Analisi in corso..."
 ) {
+    // ... filteredDevices and other properties
     val filteredDevices: List<Device>
         get() {
             var result = devices
@@ -33,7 +36,7 @@ data class SensorUiState(
                 result = result.filter { it.name.contains(searchQuery, ignoreCase = true) }
             if (selectedCustomer != null)
                 result = result.filter { device ->
-                    CustomerDeviceMap.matchesCustomer(selectedCustomer, device.id, device.name)
+                    com.example.tauanitoapp.data.CustomerDeviceMap.matchesCustomer(selectedCustomer, device.id, device.name)
                 }
             
             return if (showLowBatteryOnly || selectedCustomer != null) {
@@ -91,13 +94,38 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         try {
             val devices = repository.getDevices()
-            _uiState.value = _uiState.value.copy(isLoading = false, devices = devices)
+            val (score, summary) = calculateGlobalAIStatus(devices)
+            _uiState.value = _uiState.value.copy(
+                isLoading = false, 
+                devices = devices,
+                globalHealthScore = score,
+                globalSummary = summary
+            )
         } catch (e: Exception) {
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 errorMessage = e.message ?: "Errore caricamento"
             )
         }
+    }
+
+    private fun calculateGlobalAIStatus(devices: List<Device>): Pair<Int, String> {
+        if (devices.isEmpty()) return 100 to "Nessun dispositivo rilevato."
+        
+        var score = 100
+        val criticalDevices = devices.count { 
+            it.batteryLevel == BatteryLevel.LOW || it.batteryLevel == BatteryLevel.EMPTY 
+        }
+        
+        score -= (criticalDevices * 10)
+        
+        val summary = when {
+            criticalDevices > 0 -> "Attenzione: $criticalDevices dispositivi richiedono manutenzione (batteria scarica)."
+            devices.size > 0 -> "Sistema monitorato dall'IA: Tutti i dispositivi risultano operativi e stabili."
+            else -> "In attesa di dati dai sensori."
+        }
+        
+        return score.coerceIn(0, 100) to summary
     }
 
     fun onSearchChange(query: String) {

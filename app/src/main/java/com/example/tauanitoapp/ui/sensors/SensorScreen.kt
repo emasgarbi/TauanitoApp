@@ -1,8 +1,11 @@
 package com.example.tauanitoapp.ui.sensors
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -132,247 +136,238 @@ fun SensorScreen(
     onOpenDrawer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Determiniamo se siamo in dark mode basandoci sulla luminosità dello sfondo del tema
     val actualDarkMode = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    
-    val overlayColor = if (actualDarkMode) Color.Black.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.75f)
     val contentColor = if (actualDarkMode) Color.White else Color.Black
     val filterCardBg = if (actualDarkMode) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.08f)
 
-    Box(modifier = modifier.fillMaxSize()) {
-        // ── Sfondo schermata ─────────────────────────────────────────────────
-        Image(
-            painter            = painterResource(R.drawable.immaginesfondo),
-            contentDescription = null,
-            contentScale       = ContentScale.Crop,
-            modifier           = Modifier.matchParentSize()
-        )
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(overlayColor)
-        )
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp)
-    ) {
-        // ── Barra superiore ──────────────────────────────────────────────────
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp, bottom = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            // Menù Hamburger a sinistra
-            IconButton(
-                onClick = onOpenDrawer,
-                modifier = Modifier.align(Alignment.CenterStart)
-            ) {
-                Icon(Icons.Default.Menu, contentDescription = "Apri Menù", tint = contentColor)
-            }
-
-            // Blocco centrato: Scritta + Logo
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text       = "Tauanito",
-                    style      = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color      = contentColor
-                )
-                Image(
-                    painter            = painterResource(R.drawable.tauanito_logo),
-                    contentDescription = "Logo Tauanito",
-                    modifier           = Modifier.size(42.dp),
-                    contentScale       = ContentScale.Fit
-                )
-            }
-
-            // Logout posizionato a destra
-            TextButton(
-                onClick = onLogout,
-                modifier = Modifier.align(Alignment.CenterEnd)
-            ) {
-                Text("Logout", color = contentColor.copy(alpha = 0.8f), fontSize = 12.sp)
-            }
-        }
-
-        // ── Card Filtri ───────────────────────────────────────────────────────
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp),
-            shape = RoundedCornerShape(20.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = if (actualDarkMode) 0.dp else 4.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = filterCardBg
+    Scaffold(
+        containerColor = Color.Transparent
+    ) { paddingValues ->
+        Box(modifier = modifier.fillMaxSize().padding(paddingValues)) {
+            Image(
+                painter            = painterResource(R.drawable.immaginesfondo),
+                contentDescription = null,
+                contentScale       = ContentScale.Crop,
+                modifier           = Modifier.matchParentSize()
             )
-        ) {
-            Row(
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .matchParentSize()
+                    .background(if (actualDarkMode) Color.Black.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.75f))
+            )
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp)
             ) {
-                // Ricerca Device
-                TextField(
-                    value = state.searchQuery,
-                    onValueChange = onSearchChange,
-                    modifier = Modifier.weight(1.1f),
-                    placeholder = { Text("Cerca...", fontSize = 12.sp, color = contentColor.copy(alpha = 0.5f)) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp)) },
-                    singleLine = true,
-                    textStyle = TextStyle(fontSize = 12.sp, color = contentColor),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedTextColor = contentColor,
-                        unfocusedTextColor = contentColor
-                    )
-                )
-
-                // Divisore verticale
                 Box(
                     modifier = Modifier
-                        .width(1.dp)
-                        .height(24.dp)
-                        .background(contentColor.copy(alpha = 0.2f))
-                )
-
-                // Filtro Cliente
-                var dropdownExpanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = dropdownExpanded,
-                    onExpandedChange = { dropdownExpanded = it },
-                    modifier = Modifier.weight(0.9f)
+                        .fillMaxWidth()
+                        .padding(top = 12.dp, bottom = 6.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    TextField(
-                        value = state.selectedCustomer ?: "Clienti",
-                        onValueChange = {},
-                        readOnly = true,
-                        placeholder = { Text("Clienti", fontSize = 12.sp, color = contentColor.copy(alpha = 0.5f)) },
-                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp)) },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
-                        },
-                        textStyle = TextStyle(fontSize = 12.sp, color = contentColor),
+                    IconButton(
+                        onClick = onOpenDrawer,
+                        modifier = Modifier.align(Alignment.CenterStart)
+                    ) {
+                        Icon(Icons.Default.Menu, contentDescription = "Apri Menù", tint = contentColor)
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text       = "Tauanito",
+                            style      = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color      = contentColor
+                        )
+                        Image(
+                            painter            = painterResource(R.drawable.tauanito_logo),
+                            contentDescription = "Logo Tauanito",
+                            modifier           = Modifier.size(42.dp),
+                            contentScale       = ContentScale.Fit
+                        )
+                    }
+
+                    TextButton(
+                        onClick = onLogout,
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                    ) {
+                        Text("Logout", color = contentColor.copy(alpha = 0.8f), fontSize = 12.sp)
+                    }
+                }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (actualDarkMode) 0.dp else 4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = filterCardBg
+                    )
+                ) {
+                    Row(
                         modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedTextColor = contentColor,
-                            unfocusedTextColor = contentColor
-                        )
-                    )
-                    ExposedDropdownMenu(
-                        expanded = dropdownExpanded,
-                        onDismissRequest = { dropdownExpanded = false }
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Tutti i clienti") },
-                            onClick = { onCustomerSelect(null); dropdownExpanded = false }
+                        TextField(
+                            value = state.searchQuery,
+                            onValueChange = onSearchChange,
+                            modifier = Modifier.weight(1.1f),
+                            placeholder = { Text("Cerca...", fontSize = 12.sp, color = contentColor.copy(alpha = 0.5f)) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp)) },
+                            singleLine = true,
+                            textStyle = TextStyle(fontSize = 12.sp, color = contentColor),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = contentColor,
+                                unfocusedTextColor = contentColor
+                            )
                         )
-                        CUSTOMERS.forEach { customer ->
-                            DropdownMenuItem(
-                                text = { Text(customer) },
-                                onClick = { onCustomerSelect(customer); dropdownExpanded = false }
+
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(24.dp)
+                                .background(contentColor.copy(alpha = 0.2f))
+                        )
+
+                        var dropdownExpanded by remember { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = dropdownExpanded,
+                            onExpandedChange = { dropdownExpanded = it },
+                            modifier = Modifier.weight(0.9f)
+                        ) {
+                            TextField(
+                                value = state.selectedCustomer ?: "Clienti",
+                                onValueChange = {},
+                                readOnly = true,
+                                placeholder = { Text("Clienti", fontSize = 12.sp, color = contentColor.copy(alpha = 0.5f)) },
+                                leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp)) },
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
+                                },
+                                textStyle = TextStyle(fontSize = 12.sp, color = contentColor),
+                                modifier = Modifier
+                                    .menuAnchor()
+                                    .fillMaxWidth(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    focusedTextColor = contentColor,
+                                    unfocusedTextColor = contentColor
+                                )
+                            )
+                            ExposedDropdownMenu(
+                                expanded = dropdownExpanded,
+                                onDismissRequest = { dropdownExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Tutti i clienti") },
+                                    onClick = { onCustomerSelect(null); dropdownExpanded = false }
+                                )
+                                CUSTOMERS.forEach { customer ->
+                                    DropdownMenuItem(
+                                        text = { Text(customer) },
+                                        onClick = { onCustomerSelect(customer); dropdownExpanded = false }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                when {
+                    state.isLoading && state.devices.isEmpty() -> {
+                        Column(
+                            modifier              = Modifier.fillMaxSize(),
+                            verticalArrangement   = Arrangement.Center,
+                            horizontalAlignment   = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator(color = contentColor)
+                            Text(
+                                text     = "Caricamento dispositivi...",
+                                modifier = Modifier.padding(top = 12.dp),
+                                style    = MaterialTheme.typography.bodyMedium,
+                                color    = contentColor
                             )
                         }
+                    }
+
+                    state.errorMessage != null && state.devices.isEmpty() -> {
+                        Column(
+                            modifier              = Modifier.fillMaxSize(),
+                            verticalArrangement   = Arrangement.Center,
+                            horizontalAlignment   = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text  = state.errorMessage,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Button(
+                                onClick  = onRetry,
+                                modifier = Modifier.padding(top = 12.dp)
+                            ) { Text("Riprova") }
+                        }
+                    }
+
+                    else -> {
+                        if (state.isLoading) {
+                            CircularProgressIndicator(
+                                modifier    = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .padding(bottom = 8.dp)
+                                    .size(24.dp),
+                                strokeWidth = 2.dp,
+                                color = contentColor
+                            )
+                        }
+
+                        val list = state.filteredDevices
+                        if (list.isEmpty()) {
+                            Text(
+                                text     = "Nessun device trovato.",
+                                modifier = Modifier.padding(top = 16.dp),
+                                style    = MaterialTheme.typography.bodyMedium,
+                                color    = contentColor.copy(alpha = 0.7f)
+                            )
+                        } else {
+                            LazyColumn(
+                                modifier            = Modifier.fillMaxSize(),
+                                contentPadding      = PaddingValues(bottom = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                items(list) { device ->
+                                    DeviceCard(
+                                        device = device, 
+                                        onClick = { onDeviceClick(device.id) },
+                                        isDarkMode = actualDarkMode
+                                    )
+                                }
+                            }                        }
                     }
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // ── Contenuto ────────────────────────────────────────────────────────
-        when {
-            state.isLoading && state.devices.isEmpty() -> {
-                Column(
-                    modifier              = Modifier.fillMaxSize(),
-                    verticalArrangement   = Arrangement.Center,
-                    horizontalAlignment   = Alignment.CenterHorizontally
-                ) {
-                    CircularProgressIndicator(color = contentColor)
-                    Text(
-                        text     = "Caricamento dispositivi...",
-                        modifier = Modifier.padding(top = 12.dp),
-                        style    = MaterialTheme.typography.bodyMedium,
-                        color    = contentColor
-                    )
-                }
-            }
-
-            state.errorMessage != null && state.devices.isEmpty() -> {
-                Column(
-                    modifier              = Modifier.fillMaxSize(),
-                    verticalArrangement   = Arrangement.Center,
-                    horizontalAlignment   = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text  = state.errorMessage,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Button(
-                        onClick  = onRetry,
-                        modifier = Modifier.padding(top = 12.dp)
-                    ) { Text("Riprova") }
-                }
-            }
-
-            else -> {
-                if (state.isLoading) {
-                    CircularProgressIndicator(
-                        modifier    = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .padding(bottom = 8.dp)
-                            .size(24.dp),
-                        strokeWidth = 2.dp,
-                        color = contentColor
-                    )
-                }
-
-                val list = state.filteredDevices
-                if (list.isEmpty()) {
-                    Text(
-                        text     = "Nessun device trovato.",
-                        modifier = Modifier.padding(top = 16.dp),
-                        style    = MaterialTheme.typography.bodyMedium,
-                        color    = contentColor.copy(alpha = 0.7f)
-                    )
-                } else {
-                    LazyColumn(
-                        modifier            = Modifier.fillMaxSize(),
-                        contentPadding      = PaddingValues(bottom = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(list) { device ->
-                            DeviceCard(
-                                device = device, 
-                                onClick = { onDeviceClick(device.id) },
-                                isDarkMode = actualDarkMode
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    } // fine Column
-    } // fine Box sfondo
+    }
 }
 
 // ── Card singolo device ───────────────────────────────────────────────────────

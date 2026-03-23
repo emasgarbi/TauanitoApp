@@ -2,10 +2,7 @@ package com.example.tauanitoapp.ui.insights
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.pdf.PdfDocument
-import android.view.View
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -18,48 +15,50 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.graphics.toArgb
 import com.example.tauanitoapp.R
 import com.patrykandpatrick.vico.compose.axis.horizontal.rememberBottomAxis
 import com.patrykandpatrick.vico.compose.axis.vertical.rememberStartAxis
 import com.patrykandpatrick.vico.compose.chart.Chart
 import com.patrykandpatrick.vico.compose.chart.line.lineChart
 import com.patrykandpatrick.vico.compose.component.shape.shader.fromBrush
-import com.patrykandpatrick.vico.core.axis.AxisPosition
-import com.patrykandpatrick.vico.core.axis.formatter.AxisValueFormatter
 import com.patrykandpatrick.vico.core.chart.line.LineChart
 import com.patrykandpatrick.vico.core.component.shape.shader.DynamicShaders
+import com.patrykandpatrick.vico.core.component.text.TextComponent
 import com.patrykandpatrick.vico.core.entry.ChartEntryModelProducer
 import com.patrykandpatrick.vico.core.entry.FloatEntry
-import com.patrykandpatrick.vico.core.entry.entryModelOf
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
-import com.patrykandpatrick.vico.core.component.text.TextComponent
-import androidx.compose.ui.unit.TextUnit
 
 private val GreenGradientStart = Color(0xFF2E7D32)
 private val GreenGradientEnd   = Color(0xFF1B5E20)
-private val GreenBorderColor   = Color(0xFF81C784).copy(alpha = 0.6f)
+private val WarningColor = Color(0xFFFFB74D) // Orange for warnings
+private val ErrorColor = Color(0xFFEF5350)   // Red for anomalies
+private val SuccessColor = Color(0xFF66BB6A) // Green for good health
 
 @Composable
 fun InsightsRoute(
@@ -154,6 +153,16 @@ fun InsightsScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    // Summary Section
+                    if (state.insights.isNotEmpty()) {
+                        item {
+                            SummaryCard(
+                                summary = state.summary ?: "Analisi in corso...",
+                                healthScore = state.healthScore
+                            )
+                        }
+                    }
+
                     item {
                         SensorSelectionRow(
                             allSensors = state.insights.map { it.sensorName },
@@ -186,51 +195,154 @@ fun InsightsScreen(
 }
 
 @Composable
+fun SummaryCard(summary: String, healthScore: Int) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                BorderStroke(1.dp, Brush.horizontalGradient(listOf(Color.Cyan.copy(alpha = 0.5f), Color.Magenta.copy(alpha = 0.5f)))),
+                RoundedCornerShape(16.dp)
+            ),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painter = painterResource(id = android.R.drawable.ic_menu_view), // Placeholder for an AI-like icon
+                        contentDescription = null,
+                        tint = Color.Cyan,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Tauanito AI INSIGHTS",
+                        color = Color.Cyan,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 1.sp
+                    )
+                }
+                
+                Badge(containerColor = Color.Cyan.copy(alpha = 0.2f)) {
+                    Text("LIVE", color = Color.Cyan, fontSize = 9.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Health Score Indicator with "Pulse" effect
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(70.dp)) {
+                    CircularProgressIndicator(
+                        progress = healthScore / 100f,
+                        color = when {
+                            healthScore > 80 -> SuccessColor
+                            healthScore > 50 -> WarningColor
+                            else -> ErrorColor
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        strokeWidth = 4.dp
+                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "$healthScore",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        )
+                        Text(
+                            text = "SCORE",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.width(20.dp))
+                
+                Column {
+                    Text(
+                        text = summary,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text(
+                        text = "Analisi basata sui trend storici del dispositivo.",
+                        color = Color.White.copy(alpha = 0.4f),
+                        fontSize = 10.sp,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun SensorSelectionRow(
     allSensors: List<String>,
     selectedSensors: Set<String>,
     onToggle: (String) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Text(
-            text = "Sensori da confrontare:",
+            text = "Confronta Sensori:",
             color = Color.White,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 16.sp,
+            modifier = Modifier.padding(bottom = 12.dp)
         )
         
         if (allSensors.isEmpty()) {
             Text(
-                "Nessun dato numerico rilevato per questo dispositivo.",
+                "Nessun dato numerico per il confronto.",
                 color = Color.White.copy(alpha = 0.6f),
                 fontSize = 12.sp
             )
         } else {
+            // Using a simple grid-like layout for checkboxes
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 allSensors.forEach { sensor ->
                     val isSelected = selectedSensors.contains(sensor)
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { onToggle(sensor) },
-                        label = { Text(sensor) },
-                        leadingIcon = if (isSelected) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                )
-                            }
-                        } else null,
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = GreenGradientStart,
-                            selectedLabelColor = Color.White,
-                            selectedLeadingIconColor = Color.White
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { onToggle(sensor) }.padding(vertical = 4.dp)
+                    ) {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { onToggle(sensor) },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Color.Cyan,
+                                uncheckedColor = Color.White.copy(alpha = 0.5f),
+                                checkmarkColor = Color.Black
+                            )
                         )
-                    )
+                        Text(
+                            text = sensor,
+                            color = if (isSelected) Color.Cyan else Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
+                    }
                 }
             }
         }
@@ -309,10 +421,12 @@ fun rememberTextComponent(
 
 @Composable
 fun InsightCard(insight: InsightData) {
+    val cardColor = if (insight.isAnomaly) ErrorColor.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.15f)
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f))
+        colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -320,20 +434,65 @@ fun InsightCard(insight: InsightData) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(insight.sensorName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text(insight.trend ?: "", color = Color.White)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (insight.isAnomaly) {
+                        Icon(Icons.Default.Warning, contentDescription = "Anomalia", tint = Color.White, modifier = Modifier.padding(end = 8.dp))
+                    } else {
+                        Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.padding(end = 8.dp))
+                    }
+                    Text(insight.sensorName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+                
+                Badge(
+                    containerColor = if (insight.trend?.contains("crescita") == true) SuccessColor else if (insight.trend?.contains("calo") == true) WarningColor else Color.Gray
+                ) {
+                    Text(insight.trend?.replace(Regex("[^a-zA-Z ]"), "")?.trim() ?: "Stabile", modifier = Modifier.padding(4.dp), color = Color.White)
+                }
             }
-            Spacer(Modifier.height(8.dp))
+            
+            Spacer(Modifier.height(12.dp))
+            
+            // Prediction Section
             Text(
-                text = "Previsione: ${insight.prediction ?: "Dati insufficienti"}",
-                color = Color.White.copy(alpha = 0.9f),
+                text = "Previsione",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = insight.prediction ?: "Dati insufficienti",
+                color = Color.White,
                 fontSize = 14.sp
             )
+            
+            Spacer(Modifier.height(8.dp))
+            
+            // Advice Section (The "Intelligent" Part)
+            if (insight.advice != null) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Icon(
+                        Icons.Default.ThumbUp, 
+                        contentDescription = "Consiglio", 
+                        tint = GreenGradientStart,
+                        modifier = Modifier.size(16.dp).padding(top = 2.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = insight.advice,
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 13.sp,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    )
+                }
+            }
+            
             if (insight.unit != null) {
-                Text(
+                 Spacer(Modifier.height(8.dp))
+                 Text(
                     text = "Unità: ${insight.unit}",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 12.sp
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 10.sp,
+                    modifier = Modifier.align(Alignment.End)
                 )
             }
         }
@@ -375,6 +534,17 @@ fun exportInsightsToPdf(context: Context, state: InsightsUiState) {
     canvas.drawText("Data generazione: ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())}", 40f, yPos, paint)
     yPos += 40f
     
+    // Add Summary to PDF
+    paint.textSize = 14f
+    paint.isFakeBoldText = true
+    canvas.drawText("Riepilogo Generale (Health Score: ${state.healthScore}/100)", 40f, yPos, paint)
+    yPos += 20f
+    paint.textSize = 12f
+    paint.isFakeBoldText = false
+    // Simple text wrapping for summary could be added here, but keeping it simple for now
+    canvas.drawText(state.summary ?: "", 40f, yPos, paint)
+    yPos += 40f
+    
     state.insights.forEach { insight ->
         if (yPos > 750f) {
             return@forEach 
@@ -390,6 +560,11 @@ fun exportInsightsToPdf(context: Context, state: InsightsUiState) {
         canvas.drawText("Trend: ${insight.trend}", 50f, yPos, paint)
         yPos += 15f
         canvas.drawText("Previsione: ${insight.prediction}", 50f, yPos, paint)
+        yPos += 15f
+        if (insight.advice != null) {
+            canvas.drawText("Consiglio: ${insight.advice}", 50f, yPos, paint)
+            yPos += 15f
+        }
         yPos += 25f
     }
     
