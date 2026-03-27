@@ -12,13 +12,18 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +36,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,6 +89,7 @@ fun InsightsRoute(
         onRetry = viewModel::loadInsights,
         onToggleSensor = viewModel::toggleSensorSelection,
         onToggleDevice = viewModel::toggleDeviceComparison,
+        onVolumeChange = viewModel::setRoomVolume,
         onExportPdf = {
             exportInsightsToPdf(context, state)
         },
@@ -98,6 +105,7 @@ fun InsightsScreen(
     onRetry: () -> Unit,
     onToggleSensor: (String) -> Unit,
     onToggleDevice: (String) -> Unit,
+    onVolumeChange: (Float) -> Unit,
     onExportPdf: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -163,6 +171,22 @@ fun InsightsScreen(
                         )
                     }
 
+                    // 1b. Occupancy Estimation Section
+                    if (state.occupancyEstimate != null) {
+                        item {
+                            OccupancyCard(
+                                estimate = state.occupancyEstimate,
+                                level = state.occupancyLevel,
+                                estimatedPeople = state.estimatedPeopleCount,
+                                currentCO2 = state.co2CurrentPpm,
+                                baselineCO2 = state.co2BaselinePpm,
+                                slopePpmPerMin = state.co2SlopePpmPerMin,
+                                roomVolume = state.roomVolumeCubicMeters,
+                                onVolumeChange = onVolumeChange
+                            )
+                        }
+                    }
+
                     // 2. Intelligent Comparison Section
                     item {
                         ComparisonSection(
@@ -196,6 +220,248 @@ fun InsightsScreen(
             }
         }
     }
+}
+
+@Composable
+fun OccupancyCard(
+    estimate: String,
+    level: Int,
+    estimatedPeople: Int?,
+    currentCO2: Float?,
+    baselineCO2: Float?,
+    slopePpmPerMin: Float?,
+    roomVolume: Float,
+    onVolumeChange: (Float) -> Unit
+) {
+    val levelColor = when (level) {
+        0 -> Color(0xFF78909C)
+        1 -> SuccessColor
+        2 -> WarningColor
+        else -> ErrorColor
+    }
+    val levelLabel = when (level) {
+        0 -> "VUOTO"
+        1 -> "BASSA"
+        2 -> "MEDIA"
+        else -> "ALTA"
+    }
+    val trendArrow = when {
+        slopePpmPerMin == null -> ""
+        slopePpmPerMin > 3f -> " ↑↑"
+        slopePpmPerMin > 0.5f -> " ↑"
+        slopePpmPerMin < -3f -> " ↓↓"
+        slopePpmPerMin < -0.5f -> " ↓"
+        else -> " →"
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(BorderStroke(1.dp, levelColor.copy(alpha = 0.6f)), RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.10f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Numero grande persone
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.width(72.dp)
+            ) {
+                Text(
+                    text = if (estimatedPeople != null) "$estimatedPeople" else "?",
+                    color = levelColor,
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = 50.sp
+                )
+                Text(
+                    text = if (estimatedPeople == 1) "persona" else "persone",
+                    color = Color.White.copy(alpha = 0.55f),
+                    fontSize = 10.sp
+                )
+            }
+
+            Spacer(Modifier.width(16.dp))
+
+            // Info destra
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    var showVolumeDialogHeader by remember { mutableStateOf(false) }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Occupazione · ${"%.0f".format(roomVolume)} m³",
+                            color = levelColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Modifica volume",
+                            tint = levelColor.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .size(13.dp)
+                                .clickable { showVolumeDialogHeader = true }
+                        )
+                        if (showVolumeDialogHeader) {
+                            VolumeInputDialog(
+                                currentVolume = roomVolume,
+                                onConfirm = { newVol ->
+                                    onVolumeChange(newVol)
+                                    showVolumeDialogHeader = false
+                                },
+                                onDismiss = { showVolumeDialogHeader = false }
+                            )
+                        }
+                    }
+                    Badge(containerColor = levelColor.copy(alpha = 0.25f)) {
+                        Text(
+                            levelLabel,
+                            color = levelColor,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp)
+                        )
+                    }
+                }
+
+                if (currentCO2 != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "CO₂  ",
+                            color = Color.White.copy(alpha = 0.55f),
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            text = "${"%.0f".format(currentCO2)} ppm$trendArrow",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+            }
+        }
+    }
+}
+
+@Composable
+fun VolumeInputDialog(
+    currentVolume: Float,
+    onConfirm: (Float) -> Unit,
+    onDismiss: () -> Unit
+) {
+    // Tentiamo di decomporre il volume corrente in dimensioni ragionevoli
+    // come punto di partenza (assumiamo stanza quadrata con h=3m)
+    var lunghezza by remember { mutableStateOf("") }
+    var larghezza by remember { mutableStateOf("") }
+    var altezza   by remember { mutableStateOf("3.0") }
+    var volumeDiretto by remember { mutableStateOf("${"%.0f".format(currentVolume)}") }
+    var usaDimensioni by remember { mutableStateOf(true) }
+
+    val l = lunghezza.replace(",", ".").toFloatOrNull()
+    val w = larghezza.replace(",", ".").toFloatOrNull()
+    val h = altezza.replace(",", ".").toFloatOrNull()
+    val calcolatoDaDimensioni = if (l != null && w != null && h != null && l > 0 && w > 0 && h > 0)
+        l * w * h else null
+
+    val volumeFinale: Float? = if (usaDimensioni) calcolatoDaDimensioni
+    else volumeDiretto.replace(",", ".").toFloatOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Volume stanza", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Misura la stanza una volta sola — il valore verrà salvato per questo dispositivo.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Toggle modalità inserimento
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = usaDimensioni,
+                        onCheckedChange = { usaDimensioni = it },
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text(if (usaDimensioni) "Inserisci L × W × H" else "Inserisci volume totale")
+                }
+
+                if (usaDimensioni) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = lunghezza,
+                            onValueChange = { lunghezza = it },
+                            label = { Text("L (m)") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = larghezza,
+                            onValueChange = { larghezza = it },
+                            label = { Text("W (m)") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = altezza,
+                            onValueChange = { altezza = it },
+                            label = { Text("H (m)") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                            singleLine = true
+                        )
+                    }
+                    if (calcolatoDaDimensioni != null) {
+                        Text(
+                            "= ${"%.1f".format(calcolatoDaDimensioni)} m³",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = volumeDiretto,
+                        onValueChange = { volumeDiretto = it },
+                        label = { Text("Volume totale (m³)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            volumeFinale?.let { onConfirm(it.coerceIn(5f, 5000f)) }
+                        }),
+                        singleLine = true,
+                        suffix = { Text("m³") }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { volumeFinale?.let { onConfirm(it.coerceIn(5f, 5000f)) } },
+                enabled = volumeFinale != null && volumeFinale > 0
+            ) {
+                Text("Salva")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annulla") }
+        }
+    )
 }
 
 @Composable

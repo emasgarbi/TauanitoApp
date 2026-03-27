@@ -32,6 +32,15 @@ data class ComparisonDevice(
     val healthScore: Int
 )
 
+data class OccupancyResult(
+    val message: String,
+    val level: Int,              // 0=vuoto, 1=bassa, 2=media, 3=alta
+    val estimatedPeople: Int,    // Stima persone
+    val currentCO2: Float?,      // Valore CO2 attuale (ppm)
+    val baselineCO2: Float?,     // Baseline outdoor (~420 ppm)
+    val slopePpmPerMin: Float?   // Variazione CO2 al minuto
+)
+
 data class InsightsUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -41,13 +50,41 @@ data class InsightsUiState(
     val comparisonDevices: List<ComparisonDevice> = emptyList(),
     val selectedComparisonDevices: Set<String> = emptySet(),
     val summary: String? = null,
-    val healthScore: Int = 100
+    val healthScore: Int = 100,
+    val occupancyEstimate: String? = null,
+    val occupancyLevel: Int = 0,
+    val estimatedPeopleCount: Int? = null,
+    val co2CurrentPpm: Float? = null,
+    val co2BaselinePpm: Float? = null,
+    val co2SlopePpmPerMin: Float? = null,
+    val roomVolumeCubicMeters: Float = 100f  // Volume stanza in m³, modificabile dall'utente
 )
 
 class InsightsViewModel(application: Application, private val deviceId: String) : AndroidViewModel(application) {
 
     private val repository = SensorRepository(application)
-    private val _uiState = MutableStateFlow(InsightsUiState())
+    private val prefs = application.getSharedPreferences("occupancy_prefs", android.content.Context.MODE_PRIVATE)
+
+    private fun loadSavedVolume(): Float =
+        prefs.getFloat("volume_$deviceId", 100f)
+
+    fun setRoomVolume(volumeM3: Float) {
+        prefs.edit().putFloat("volume_$deviceId", volumeM3).apply()
+        _uiState.value = _uiState.value.copy(roomVolumeCubicMeters = volumeM3)
+        // Ricalcola l'occupazione con il nuovo volume
+        val history = _uiState.value.history ?: return
+        val occupancy = estimateOccupancyFromRaw(history.records, volumeM3)
+        _uiState.value = _uiState.value.copy(
+            occupancyEstimate = occupancy.message,
+            occupancyLevel = occupancy.level,
+            estimatedPeopleCount = occupancy.estimatedPeople,
+            co2CurrentPpm = occupancy.currentCO2,
+            co2BaselinePpm = occupancy.baselineCO2,
+            co2SlopePpmPerMin = occupancy.slopePpmPerMin
+        )
+    }
+
+    private val _uiState = MutableStateFlow(InsightsUiState(roomVolumeCubicMeters = loadSavedVolume()))
     val uiState: StateFlow<InsightsUiState> = _uiState
 
     init {
@@ -67,7 +104,10 @@ class InsightsViewModel(application: Application, private val deviceId: String) 
                 val history = repository.getDeviceHistory(deviceId)
                 val processedInsights = processHistoryData(history.records)
                 
-                // 2. Carica l'elenco di tutti i device per il confronto
+                // 2. Calcola l'occupazione basandosi sui dati grezzi (non filtrati)
+                val occupancy = estimateOccupancyFromRaw(history.records, _uiState.value.roomVolumeCubicMeters)
+
+                // 3. Carica l'elenco di tutti i device per il confronto
                 val allDevices = try { repository.getDevices() } catch (e: Exception) { emptyList() }
                 val comparisonList = allDevices.map { dev ->
                     ComparisonDevice(
@@ -91,7 +131,13 @@ class InsightsViewModel(application: Application, private val deviceId: String) 
                     comparisonDevices = comparisonList,
                     selectedComparisonDevices = setOf(deviceId),
                     summary = summary,
-                    healthScore = healthScore
+                    healthScore = healthScore,
+                    occupancyEstimate = occupancy.message,
+                    occupancyLevel = occupancy.level,
+                    estimatedPeopleCount = occupancy.estimatedPeople,
+                    co2CurrentPpm = occupancy.currentCO2,
+                    co2BaselinePpm = occupancy.baselineCO2,
+                    co2SlopePpmPerMin = occupancy.slopePpmPerMin
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -102,24 +148,114 @@ class InsightsViewModel(application: Application, private val deviceId: String) 
         }
     }
 
-    fun toggleSensorSelection(sensorName: String) {
-        val current = _uiState.value.selectedSensors.toMutableSet()
-        if (current.contains(sensorName)) {
-            current.remove(sensorName)
-        } else {
-            current.add(sensorName)
-        }
-        _uiState.value = _uiState.value.copy(selectedSensors = current)
-    }
+    /**
+     * Stima il numero di persone in una stanza basandosi sulla "firma CO2".
+     *
+     * Baseline fissa: 420 ppm (CO2 atmosferico standard).
+     * NON derivata dai dati storici: in sale sempre occupate il minimo osservato
+     * può essere già 490-500 ppm, rendendo l'eccesso quasi zero.
+     *
+     * Stimatore level-based (steady-state):
+     *   CO2_eccesso = CO2_attuale − 420 ppm
+     *   n_level = eccesso / K_level
+     *   K_level = 25 ppm/persona → calibrato per uffici/sale con ventilazione moderata.
+     *   (il vecchio valore 250 era per una stanzina da 40 m³ senza ricambio aria)
+     *
+     * Stimatore slope-based (fase di accumulo):
+     *   n_slope = slope / K_slope
+     *   K_slope = 1.5 ppm/min/persona (vs vecchio 5 → più sensibile)
+     *
+     * Il peso tra i due dipende dalla pendenza:
+     *   - CO2 in salita    → più peso allo slope (occupazione crescente)
+     *   - CO2 stabile/alta → più peso al livello assoluto (steady-state)
+     *   - CO2 in forte calo → ventilazione attiva, stima sospesa
+     */
+    private fun estimateOccupancyFromRaw(records: List<HistoryRecord>, roomVolume: Float = 100f): OccupancyResult {
+        val dateFormats = listOf(
+            SimpleDateFormat("dd.MM.yyyy - HH:mm", Locale.getDefault()),
+            SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()),
+            SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault())
+        )
 
-    fun toggleDeviceComparison(id: String) {
-        val current = _uiState.value.selectedComparisonDevices.toMutableSet()
-        if (current.contains(id)) {
-            if (current.size > 1) current.remove(id) // Mantieni almeno uno
-        } else {
-            current.add(id)
+        val co2Data = records.mapNotNull { record ->
+            var ts = 0L
+            for (f in dateFormats) {
+                try { ts = f.parse(record.timestamp)?.time ?: 0L; if (ts != 0L) break } catch (e: Exception) {}
+            }
+            val reading = record.readings.find { it.name.contains("CO2", ignoreCase = true) }
+            val v = reading?.value?.replace(",", ".")?.replace("[^0-9.-]".toRegex(), "")?.toFloatOrNull()
+            if (ts != 0L && v != null && v > 100f) ts to v else null
+        }.sortedBy { it.first }
+
+        if (co2Data.size < 2) return OccupancyResult(
+            "Dati CO2 insufficienti per la stima", 0, 0, null, null, null
+        )
+
+        // Baseline fissa: CO2 atmosferico standard.
+        // Non usiamo il minimo storico perché in sale sempre occupate è già elevato.
+        val baselineCO2 = 420f
+
+        // Pendenza sugli ultimi ≤5 campioni
+        val recent = co2Data.takeLast(5)
+        val last = recent.last()
+        val firstR = recent.first()
+        val minutes = (last.first - firstR.first) / 60000f
+        val slope = if (minutes >= 1f) (last.second - firstR.second) / minutes else 0f
+        val currentCO2 = last.second
+
+        // --- Costanti derivate dal volume reale della stanza ---
+        // Produzione CO2 per persona sedentaria: G = 0.005 m³/hr = 8.33×10⁻⁵ m³/min
+        //
+        // ACH = 5.0: valore realistico per uffici/sale con impianto HVAC.
+        // ACH=1 (vecchio default) è quasi "finestra chiusa in stanzina" → sottostimava.
+        // Ref. ASHRAE 62.1: uffici tipici 4-8 ACH con ventilazione meccanica.
+        //
+        // Slope-based: slope = n × G_ppm / V  →  K_slope = 83.3 / V  [ppm/min/persona]
+        // Level-based (steady-state): excess = n × G / (V × ACH)
+        //   →  K_level = 5000 / (V × ACH)  [ppm/persona]
+        val ACH = 5.0f
+        val K_slope = (83.3f / roomVolume).coerceAtLeast(0.05f)
+        val K_level = (5000f / (roomVolume * ACH)).coerceAtLeast(0.5f)
+
+        val peopleFromSlope = (slope / K_slope).coerceAtLeast(0f)
+
+        val excessCO2 = (currentCO2 - baselineCO2).coerceAtLeast(0f)
+        val peopleFromLevel = (excessCO2 / K_level).coerceAtLeast(0f)
+
+        // --- Peso dinamico ---
+        // Quando CO2 è stabile (slope≈0) slopeWeight=0 → si usa il 100% del level.
+        // Prima con slopeWeight=0.20 si perdeva il 20% dell'estimate inutilmente.
+        val slopeWeight = when {
+            slope > 5f  -> 0.75f   // CO2 in forte salita → slope molto affidabile
+            slope > 1f  -> 0.55f   // Salita moderata
+            slope > 0f  -> 0.35f   // Lieve salita
+            slope < -3f -> 0.05f   // Ventilazione attiva → livello poco affidabile
+            else        -> 0.00f   // Stabile → 100% level, slope contribuisce 0
         }
-        _uiState.value = _uiState.value.copy(selectedComparisonDevices = current)
+
+        val rawEstimate = slopeWeight * peopleFromSlope + (1f - slopeWeight) * peopleFromLevel
+        val estimatedPeople = rawEstimate.plus(0.5f).toInt().coerceAtLeast(0)
+
+        val co2Str = "${"%.0f".format(currentCO2)} ppm"
+        val slopeStr = "${"%.1f".format(slope)} ppm/min"
+
+        val volStr = "${"%.0f".format(roomVolume)} m³"
+        val (message, level) = when {
+            slope < -5f          -> "Ventilazione in corso (CO₂ $co2Str, $slopeStr)" to 0
+            estimatedPeople == 0 -> "Stanza probabilmente vuota su $volStr (CO₂ $co2Str)" to 0
+            estimatedPeople <= 3 -> "~$estimatedPeople persone su $volStr (CO₂ $co2Str)" to 1
+            estimatedPeople <= 8 -> "~$estimatedPeople persone su $volStr (CO₂ $co2Str)" to 2
+            else                 -> "~$estimatedPeople persone su $volStr (CO₂ $co2Str)" to 3
+        }
+
+        return OccupancyResult(
+            message = message,
+            level = level,
+            estimatedPeople = estimatedPeople,
+            currentCO2 = currentCO2,
+            baselineCO2 = baselineCO2,
+            slopePpmPerMin = slope
+        )
     }
 
     private fun processInstantReadings(readings: List<SensorReading>): List<InsightData> {
@@ -357,6 +493,20 @@ class InsightsViewModel(application: Application, private val deviceId: String) 
             criticals > 0 -> "Stato Critico: Alcuni parametri sono fuori soglia. Consulta i suggerimenti qui sotto."
             else -> "Tutto sotto controllo. I sensori mostrano un andamento regolare e non sono previste criticità immediate."
         }
+    }
+
+    fun toggleSensorSelection(sensorName: String) {
+        val current = _uiState.value.selectedSensors
+        _uiState.value = _uiState.value.copy(
+            selectedSensors = if (current.contains(sensorName)) current - sensorName else current + sensorName
+        )
+    }
+
+    fun toggleDeviceComparison(deviceId: String) {
+        val current = _uiState.value.selectedComparisonDevices
+        _uiState.value = _uiState.value.copy(
+            selectedComparisonDevices = if (current.contains(deviceId)) current - deviceId else current + deviceId
+        )
     }
 
     private fun calculateHealthScore(insights: List<InsightData>): Int {

@@ -30,6 +30,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.tauanitoapp.data.repository.NotificationRepository
 import com.example.tauanitoapp.ui.history.HistoryRoute
 import com.example.tauanitoapp.ui.insights.InsightsRoute
+import com.example.tauanitoapp.ui.kiosk.KioskRoute
 import com.example.tauanitoapp.ui.login.LoginRoute
 import com.example.tauanitoapp.ui.notifications.NotificationScreen
 import com.example.tauanitoapp.ui.sensors.SensorRoute
@@ -51,6 +52,7 @@ private const val ROUTE_HISTORY = "history/{deviceId}"
 private const val ROUTE_INSIGHTS = "insights/{deviceId}"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_NOTIFICATIONS = "notifications"
+private const val ROUTE_KIOSK = "kiosk/{deviceId}"
 
 class MainActivity : FragmentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
@@ -265,12 +267,13 @@ fun TauanitoApp(activity: FragmentActivity) {
             }
         ) {
             Scaffold(
-                modifier = Modifier.fillMaxSize()
-            ) { innerPadding ->
+                modifier = Modifier.fillMaxSize(),
+                contentWindowInsets = WindowInsets(0)
+            ) { _ ->
                 NavHost(
                     navController = navController,
                     startDestination = ROUTE_WELCOME,
-                    modifier = Modifier.padding(innerPadding)
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     composable(ROUTE_WELCOME) {
                         WelcomeScreen(
@@ -300,6 +303,9 @@ fun TauanitoApp(activity: FragmentActivity) {
                             },
                             onDeviceClick = { deviceId ->
                                 navController.navigate("history/$deviceId")
+                            },
+                            onKioskClick = { deviceId ->
+                                navController.navigate("kiosk/$deviceId")
                             },
                             onOpenDrawer = {
                                 scope.launch { drawerState.open() }
@@ -340,6 +346,14 @@ fun TauanitoApp(activity: FragmentActivity) {
                         NotificationScreen(
                             isDarkMode = isDarkMode,
                             onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable(ROUTE_KIOSK) { backStackEntry ->
+                        val deviceId = backStackEntry.arguments?.getString("deviceId") ?: ""
+                        KioskRoute(
+                            deviceId = deviceId,
+                            onExit = { navController.popBackStack() }
                         )
                     }
                 }

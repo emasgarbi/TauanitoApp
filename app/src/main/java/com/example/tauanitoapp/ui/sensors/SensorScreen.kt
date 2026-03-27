@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +36,8 @@ import com.example.tauanitoapp.R
 import com.example.tauanitoapp.data.model.BatteryLevel
 import com.example.tauanitoapp.data.model.Device
 import com.example.tauanitoapp.data.model.SensorReading
+import com.example.tauanitoapp.ui.kiosk.SetKioskPinDialog
+import com.example.tauanitoapp.ui.kiosk.ExitKioskDialog
 
 // ── Colori ──────────────────────────────────────────────────────────────────
 private val ColorTitle       = Color(0xFF1565C0) // blu titolo
@@ -100,13 +103,12 @@ fun SensorRoute(
     viewModel: SensorViewModel = viewModel(),
     onLogout: () -> Unit,
     onDeviceClick: (String) -> Unit,
+    onKioskClick: (String) -> Unit,
     onOpenDrawer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
 
-    // startAutoRefresh chiama refreshData() subito all'avvio, poi ogni N minuti.
-    // Non serve un refresh() separato: evita due richieste HTTP concorrenti al primo caricamento.
     LaunchedEffect(Unit) {
         viewModel.startAutoRefresh()
     }
@@ -118,6 +120,7 @@ fun SensorRoute(
         onSearchChange   = viewModel::onSearchChange,
         onCustomerSelect = viewModel::onCustomerSelect,
         onDeviceClick    = onDeviceClick,
+        onKioskClick     = onKioskClick,
         onOpenDrawer     = onOpenDrawer,
         modifier         = modifier
     )
@@ -133,12 +136,46 @@ fun SensorScreen(
     onSearchChange: (String) -> Unit,
     onCustomerSelect: (String?) -> Unit,
     onDeviceClick: (String) -> Unit,
+    onKioskClick: (String) -> Unit,
     onOpenDrawer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val actualDarkMode = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val contentColor = if (actualDarkMode) Color.White else Color.Black
     val filterCardBg = if (actualDarkMode) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.08f)
+
+    val context = LocalContext.current
+    val kioskPrefs = remember { context.getSharedPreferences("kiosk_prefs", android.content.Context.MODE_PRIVATE) }
+    var kioskTargetDevice by remember { mutableStateOf<String?>(null) }
+    var showSetPin by remember { mutableStateOf(false) }
+    var showEnterPin by remember { mutableStateOf(false) }
+
+    // Dialog impostazione PIN (prima volta)
+    if (showSetPin && kioskTargetDevice != null) {
+        SetKioskPinDialog(
+            onDismiss = { showSetPin = false; kioskTargetDevice = null },
+            onPinSet = { pin ->
+                kioskPrefs.edit().putString("kiosk_pin", pin).apply()
+                showSetPin = false
+                onKioskClick(kioskTargetDevice!!)
+                kioskTargetDevice = null
+            }
+        )
+    }
+
+    // Dialog inserimento PIN (accessi successivi)
+    if (showEnterPin && kioskTargetDevice != null) {
+        ExitKioskDialog(
+            onDismiss = { showEnterPin = false; kioskTargetDevice = null },
+            onCheckPin = { input -> input == (kioskPrefs.getString("kiosk_pin", "") ?: "") },
+            onConfirmed = {
+                showEnterPin = false
+                val id = kioskTargetDevice!!
+                kioskTargetDevice = null
+                onKioskClick(id)
+            }
+        )
+    }
 
     Scaffold(
         containerColor = Color.Transparent
@@ -357,8 +394,14 @@ fun SensorScreen(
                             ) {
                                 items(list) { device ->
                                     DeviceCard(
-                                        device = device, 
+                                        device = device,
                                         onClick = { onDeviceClick(device.id) },
+                                        onKioskClick = {
+                                            kioskTargetDevice = device.id
+                                            val pinSet = kioskPrefs.contains("kiosk_pin") &&
+                                                !kioskPrefs.getString("kiosk_pin", "").isNullOrEmpty()
+                                            if (pinSet) showEnterPin = true else showSetPin = true
+                                        },
                                         isDarkMode = actualDarkMode
                                     )
                                 }
@@ -373,7 +416,7 @@ fun SensorScreen(
 // ── Card singolo device ───────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DeviceCard(device: Device, onClick: () -> Unit, isDarkMode: Boolean) {
+private fun DeviceCard(device: Device, onClick: () -> Unit, onKioskClick: () -> Unit, isDarkMode: Boolean) {
     val cardOverlay = if (isDarkMode) Color.Black.copy(alpha = 0.50f) else Color.Transparent
     val textPrimary = if (isDarkMode) Color.White else Color.Black
     val deviceNameColor = if (isDarkMode) ColorDeviceName else Color(0xFF1B5E20) // Verde più scuro in Light Mode
@@ -439,6 +482,31 @@ private fun DeviceCard(device: Device, onClick: () -> Unit, isDarkMode: Boolean)
                 // Letture sensori
                 device.readings.forEach { reading ->
                     SensorRow(reading = reading, isDarkMode = isDarkMode)
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Pulsante Vista Chiosco
+                Button(
+                    onClick = onKioskClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                        contentColor   = Color(0xFF00E5FF)
+                    )
+                ) {
+                    Icon(
+                        imageVector        = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier           = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text       = "Vista schermo intero",
+                        fontSize   = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
