@@ -67,7 +67,7 @@ fun InsightsRoute(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val application = context.applicationContext as android.app.Application
+    val application = context.applicationContext as android.app.Application;
     
     val factory = object : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -82,6 +82,7 @@ fun InsightsRoute(
         onBack = onBack,
         onRetry = viewModel::loadInsights,
         onToggleSensor = viewModel::toggleSensorSelection,
+        onToggleDevice = viewModel::toggleDeviceComparison,
         onExportPdf = {
             exportInsightsToPdf(context, state)
         },
@@ -96,6 +97,7 @@ fun InsightsScreen(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onToggleSensor: (String) -> Unit,
+    onToggleDevice: (String) -> Unit,
     onExportPdf: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -116,7 +118,7 @@ fun InsightsScreen(
             TopAppBar(
                 title = { 
                     Text(
-                        text = "Analisi Avanzata",
+                        text = "Intelligenza Tauanito",
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
@@ -136,7 +138,7 @@ fun InsightsScreen(
 
             if (state.isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color.White)
+                    CircularProgressIndicator(color = Color.Cyan)
                 }
             } else if (state.errorMessage != null) {
                 Column(
@@ -153,16 +155,24 @@ fun InsightsScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Summary Section
-                    if (state.insights.isNotEmpty()) {
-                        item {
-                            SummaryCard(
-                                summary = state.summary ?: "Analisi in corso...",
-                                healthScore = state.healthScore
-                            )
-                        }
+                    // 1. AI Summary Section
+                    item {
+                        SummaryCard(
+                            summary = state.summary ?: "Analisi in corso...",
+                            healthScore = state.healthScore
+                        )
                     }
 
+                    // 2. Intelligent Comparison Section
+                    item {
+                        ComparisonSection(
+                            devices = state.comparisonDevices,
+                            selectedIds = state.selectedComparisonDevices,
+                            onToggle = onToggleDevice
+                        )
+                    }
+
+                    // 3. Sensor Analysis Section
                     item {
                         SensorSelectionRow(
                             allSensors = state.insights.map { it.sensorName },
@@ -181,12 +191,81 @@ fun InsightsScreen(
                         items(filteredInsights) { insight ->
                             InsightCard(insight)
                         }
-                    } else {
-                        item {
-                            Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                                Text("Seleziona almeno un sensore per visualizzare l'analisi", color = Color.White.copy(alpha = 0.7f))
-                            }
-                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ComparisonSection(
+    devices: List<ComparisonDevice>,
+    selectedIds: Set<String>,
+    onToggle: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            "Confronto Gestione (Fleet Benchmarking)",
+            color = Color.White,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 16.sp,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(devices) { device ->
+                val isSelected = selectedIds.contains(device.deviceId)
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onToggle(device.deviceId) },
+                    enabled = true,
+                    label = { 
+                        Text(
+                            device.deviceName, 
+                            color = if (isSelected) Color.Black else Color.White,
+                            fontSize = 12.sp
+                        ) 
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color.Cyan,
+                        containerColor = Color.White.copy(alpha = 0.1f)
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = isSelected,
+                        borderColor = Color.White.copy(alpha = 0.3f),
+                        selectedBorderColor = Color.Cyan
+                    )
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Mini card di confronto rapido per i selezionati
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            devices.filter { selectedIds.contains(it.deviceId) }.take(3).forEach { device ->
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(device.deviceName, color = Color.White.copy(alpha = 0.7f), fontSize = 10.sp, maxLines = 1)
+                        Text(
+                            "${device.healthScore}%", 
+                            color = if (device.healthScore > 80) SuccessColor else WarningColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text("Salute", color = Color.White.copy(alpha = 0.4f), fontSize = 8.sp)
                     }
                 }
             }
@@ -351,27 +430,90 @@ fun SensorSelectionRow(
 
 @Composable
 fun ComparisonChart(insights: List<InsightData>) {
+    // Verifichiamo se ci sono rilevazioni di più giorni
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
+    val uniqueDays = remember(insights) {
+        insights.flatMap { it.timestamps }.map { dateFormat.format(Date(it)) }.distinct().size
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth().height(250.dp),
+        modifier = Modifier.fillMaxWidth().height(if (uniqueDays < 2) 270.dp else 250.dp),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Andamento Temporale", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Andamento Temporale", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+
+                if (uniqueDays < 2) {
+                    Text(
+                        "Andamento orario",
+                        color = Color.Cyan.copy(alpha = 0.7f),
+                        fontSize = 10.sp,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    )
+                } else {
+                    Text(
+                        "$uniqueDays giorni",
+                        color = SuccessColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            if (uniqueDays < 2) {
+                Text(
+                    "💡 Per vedere l'andamento di più giorni, verifica che il dispositivo abbia trasmesso dati in più giornate",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 9.sp,
+                    lineHeight = 11.sp,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                )
+            }
+
             Spacer(Modifier.height(8.dp))
-            
-            val entryModel = remember(insights) {
+
+            // Trova il timestamp minimo tra tutti i sensori per normalizzare l'asse X
+            val globalMinTs = remember(insights) {
+                insights.flatMap { it.timestamps }.minOrNull() ?: 0L
+            }
+
+            val entryModel = remember(insights, globalMinTs) {
                 if (insights.isEmpty()) return@remember null
                 
                 val series = insights.map { insight ->
-                    insight.values.mapIndexed { index, value ->
-                        FloatEntry(index.toFloat(), value)
+                    insight.values.zip(insight.timestamps).map { (value, ts) ->
+                        // X = minuti passati dal primo campionamento assoluto
+                        val x = (ts - globalMinTs) / 60000f
+                        FloatEntry(x, value)
                     }
                 }
                 ChartEntryModelProducer(series).getModel()
             }
 
             if (entryModel != null) {
+                // Determiniamo se abbiamo più giorni o solo uno
+                val maxTs = insights.flatMap { it.timestamps }.maxOrNull() ?: 0L
+                val timeSpanMs = maxTs - globalMinTs
+                val hasSingleDay = uniqueDays < 2
+
+                // Se abbiamo un solo giorno, mostriamo l'orario
+                // Se abbiamo più giorni, mostriamo solo la data
+                val timeFormatter = remember(globalMinTs, hasSingleDay) {
+                    val pattern = if (hasSingleDay) "HH:mm" else "dd/MM"
+                    val sdf = SimpleDateFormat(pattern, Locale.getDefault())
+                    val formatter: (Float) -> String = { value ->
+                        val ts = globalMinTs + (value.toLong() * 60000L)
+                        sdf.format(Date(ts))
+                    }
+                    formatter
+                }
+
                 Chart(
                     chart = lineChart(
                         lines = insights.mapIndexed { index, _ ->
@@ -392,9 +534,8 @@ fun ComparisonChart(insights: List<InsightData>) {
                     ),
                     bottomAxis = rememberBottomAxis(
                         label = rememberTextComponent(color = Color.White, textSize = 10.sp),
-                        valueFormatter = { value, _ -> 
-                            value.toInt().toString()
-                        }
+                        valueFormatter = { value, _ -> timeFormatter(value) },
+                        guideline = null
                     ),
                     modifier = Modifier.fillMaxSize()
                 )

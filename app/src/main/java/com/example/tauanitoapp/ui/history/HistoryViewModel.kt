@@ -5,16 +5,19 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.tauanitoapp.data.model.DeviceHistory
 import com.example.tauanitoapp.data.repository.SensorRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class HistoryUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val downloadError: String? = null,
     val history: DeviceHistory? = null,
     val isDownloading: Boolean = false,
-    val downloadData: ByteArray? = null
+    val showFilePicker: Boolean = false
 )
 
 class HistoryViewModel(application: Application, private val deviceId: String) : AndroidViewModel(application) {
@@ -42,19 +45,36 @@ class HistoryViewModel(application: Application, private val deviceId: String) :
         }
     }
 
-    fun downloadCsv() {
+    fun startDownloadProcess() {
+        _uiState.value = _uiState.value.copy(showFilePicker = true, downloadError = null)
+    }
+
+    fun onFilePickerLaunched() {
+        _uiState.value = _uiState.value.copy(showFilePicker = false)
+    }
+
+    fun downloadCsvToUri(uri: android.net.Uri) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isDownloading = true)
+            _uiState.value = _uiState.value.copy(isDownloading = true, downloadError = null)
             try {
                 val data = repository.downloadDeviceCsv(deviceId)
-                _uiState.value = _uiState.value.copy(isDownloading = false, downloadData = data)
+                val context = getApplication<Application>()
+                withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                        output.write(data)
+                    }
+                }
+                _uiState.value = _uiState.value.copy(isDownloading = false)
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isDownloading = false, errorMessage = "Errore download CSV")
+                _uiState.value = _uiState.value.copy(
+                    isDownloading = false, 
+                    downloadError = "Errore durante il salvataggio del file"
+                )
             }
         }
     }
 
-    fun onDownloadConsumed() {
-        _uiState.value = _uiState.value.copy(downloadData = null)
+    fun clearDownloadError() {
+        _uiState.value = _uiState.value.copy(downloadError = null)
     }
 }

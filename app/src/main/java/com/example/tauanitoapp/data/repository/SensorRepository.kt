@@ -54,6 +54,8 @@ class SensorRepository(context: Context) {
         if (table != null) {
             val headers = table.select("thead th").map { it.text().trim() }
             val rows = table.select("tbody tr")
+            Log.d("TauanitoRepo", "Righe tabella trovate: ${rows.size}")
+
             for (row in rows) {
                 val cols = row.select("td")
                 if (cols.isNotEmpty()) {
@@ -67,6 +69,11 @@ class SensorRepository(context: Context) {
                     records.add(com.example.tauanitoapp.data.model.HistoryRecord(timestamp, readings))
                 }
             }
+
+            // Log dei giorni unici
+            val uniqueDays = records.map { it.timestamp.substringBefore(" ") }.distinct()
+            Log.d("TauanitoRepo", "Record parsati: ${records.size}, Giorni unici: ${uniqueDays.size}")
+            Log.d("TauanitoRepo", "Giorni trovati: ${uniqueDays.joinToString(", ")}")
         }
         return com.example.tauanitoapp.data.model.DeviceHistory(deviceId, deviceName, records)
     }

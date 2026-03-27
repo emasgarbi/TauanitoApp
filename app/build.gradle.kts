@@ -10,18 +10,14 @@ android {
 
     defaultConfig {
         applicationId = "com.Taua.TauanitoApp"
-        minSdk = 26
+        minSdk = 24
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.1.5"
+        versionCode = 11
+        versionName = "1.1.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
-        }
-        
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 

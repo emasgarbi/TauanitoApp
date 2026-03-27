@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -65,18 +66,14 @@ fun HistoryRoute(
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
         uri?.let {
-            state.downloadData?.let { data ->
-                context.contentResolver.openOutputStream(it)?.use { output ->
-                    output.write(data)
-                }
-                viewModel.onDownloadConsumed()
-            }
+            viewModel.downloadCsvToUri(it)
         }
     }
 
-    LaunchedEffect(state.downloadData) {
-        if (state.downloadData != null) {
+    LaunchedEffect(state.showFilePicker) {
+        if (state.showFilePicker) {
             saveFileLauncher.launch("tauanito_${deviceId}.csv")
+            viewModel.onFilePickerLaunched()
         }
     }
 
@@ -84,7 +81,8 @@ fun HistoryRoute(
         state = state,
         onBack = onBack,
         onRetry = viewModel::loadHistory,
-        onDownloadCsv = viewModel::downloadCsv,
+        onDownloadCsv = viewModel::startDownloadProcess,
+        onClearDownloadError = viewModel::clearDownloadError,
         onNavigateToInsights = { onNavigateToInsights(deviceId) },
         modifier = modifier
     )
@@ -97,111 +95,79 @@ fun HistoryScreen(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onDownloadCsv: () -> Unit,
+    onClearDownloadError: () -> Unit,
     onNavigateToInsights: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
-        Image(
-            painter = painterResource(R.drawable.immaginesfondo),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize()
-        )
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(Color.Black.copy(alpha = 0.5f))
-        )
+    val snackbarHostState = remember { SnackbarHostState() }
 
-        Column(modifier = Modifier.fillMaxSize()) {
-            TopAppBar(
-                title = { 
-                    Text(
-                        text = state.history?.deviceName ?: "Storico Dati",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 21.sp, // Ingrandito
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Indietro", tint = Color.White)
-                    }
-                },
-                actions = {
-                    // ── PULSANTE INSIGHTS ──────────────────────────
-                    if (state.history != null) {
-                        Surface(
-                            onClick = onNavigateToInsights,
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.Transparent,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .height(30.dp)
-                                .shadow(3.dp, RoundedCornerShape(8.dp))
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        brush = Brush.verticalGradient(
-                                            colors = listOf(Color(0xFF1976D2), Color(0xFF0D47A1))
-                                        )
-                                    )
-                                    .border(BorderStroke(1.dp, Color(0xFF64B5F6).copy(alpha = 0.6f)), RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "INSIGHTS", 
-                                    color = Color.White, 
-                                    fontSize = 11.sp, 
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                        }
-                    }
+    LaunchedEffect(state.downloadError) {
+        state.downloadError?.let {
+            snackbarHostState.showSnackbar(it)
+            onClearDownloadError()
+        }
+    }
 
-                    // ── PULSANTE VERDE CSV ──────────────────────────
-                    if (state.isDownloading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(28.dp).padding(end = 12.dp), // Ingrandito
-                            color = GreenGradientStart,
-                            strokeWidth = 3.dp
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color.Transparent,
+        modifier = modifier.fillMaxSize()
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Image(
+                painter = painterResource(R.drawable.immaginesfondo),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize()
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+            )
+
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopAppBar(
+                    title = { 
+                        Text(
+                            text = state.history?.deviceName ?: "Storico Dati",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 21.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                    } else if (state.history != null) {
-                        Surface(
-                            onClick = onDownloadCsv,
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.Transparent,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .height(30.dp)
-                                .widthIn(min = 70.dp)
-                                .shadow(3.dp, RoundedCornerShape(8.dp))
-                        ) {
-                            Box(
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Indietro", tint = Color.White)
+                        }
+                    },
+                    actions = {
+                        // ── PULSANTE INSIGHTS ──────────────────────────
+                        if (state.history != null) {
+                            Surface(
+                                onClick = onNavigateToInsights,
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.Transparent,
                                 modifier = Modifier
-                                    .background(
-                                        brush = Brush.verticalGradient(
-                                            colors = listOf(GreenGradientStart, GreenGradientEnd)
-                                        )
-                                    )
-                                    .border(BorderStroke(1.dp, GreenBorderColor), RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 10.dp),
-                                contentAlignment = Alignment.Center
+                                    .padding(end = 8.dp)
+                                    .height(30.dp)
+                                    .shadow(3.dp, RoundedCornerShape(8.dp))
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.KeyboardArrowDown, 
-                                        contentDescription = null, 
-                                        tint = Color.White,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(Modifier.width(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            brush = Brush.verticalGradient(
+                                                colors = listOf(Color(0xFF1976D2), Color(0xFF0D47A1))
+                                            )
+                                        )
+                                        .border(BorderStroke(1.dp, Color(0xFF64B5F6).copy(alpha = 0.6f)), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
                                     Text(
-                                        "CSV", 
+                                        "INSIGHTS", 
                                         color = Color.White, 
                                         fontSize = 11.sp, 
                                         fontWeight = FontWeight.ExtraBold
@@ -209,42 +175,90 @@ fun HistoryScreen(
                                 }
                             }
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-            )
 
-            when {
-                state.isLoading && state.history == null -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color.White)
-                    }
-                }
-                state.errorMessage != null -> {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(state.errorMessage, color = Color.White)
-                        Button(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) {
-                            Text("Riprova")
+                        // ── PULSANTE VERDE CSV ──────────────────────────
+                        if (state.isDownloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp).padding(end = 12.dp),
+                                color = GreenGradientStart,
+                                strokeWidth = 3.dp
+                            )
+                        } else if (state.history != null) {
+                            Surface(
+                                onClick = onDownloadCsv,
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.Transparent,
+                                modifier = Modifier
+                                    .padding(end = 8.dp)
+                                    .height(30.dp)
+                                    .widthIn(min = 70.dp)
+                                    .shadow(3.dp, RoundedCornerShape(8.dp))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            brush = Brush.verticalGradient(
+                                                colors = listOf(GreenGradientStart, GreenGradientEnd)
+                                            )
+                                        )
+                                        .border(BorderStroke(1.dp, GreenBorderColor), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.KeyboardArrowDown, 
+                                            contentDescription = null, 
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(
+                                            "CSV", 
+                                            color = Color.White, 
+                                            fontSize = 11.sp, 
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    }
-                }
-                state.history != null -> {
-                    if (state.history.records.isEmpty()) {
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                )
+
+                when {
+                    state.isLoading && state.history == null -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("Nessuno storico disponibile", color = Color.White)
+                            CircularProgressIndicator(color = Color.White)
                         }
-                    } else {
-                        LazyColumn(
+                    }
+                    state.errorMessage != null && state.history == null -> {
+                        Column(
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            items(state.history.records) { record ->
-                                HistoryRecordCard(record)
+                            Text(state.errorMessage, color = Color.White)
+                            Button(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) {
+                                Text("Riprova")
+                            }
+                        }
+                    }
+                    state.history != null -> {
+                        if (state.history.records.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("Nessuno storico disponibile", color = Color.White)
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(state.history.records) { record ->
+                                    HistoryRecordCard(record)
+                                }
                             }
                         }
                     }

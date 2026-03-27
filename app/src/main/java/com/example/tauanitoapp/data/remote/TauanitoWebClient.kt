@@ -51,6 +51,8 @@ class TauanitoWebClient(private val client: OkHttpClient) {
     }
 
     fun fetchDeviceHtml(deviceId: String): String {
+        // Prima proviamo senza parametri, poi con parametri diversi se necessario
+        // Il server potrebbe avere endpoint specifici per periodi più lunghi
         return fetchUrl("${NetworkModule.BASE_URL}/device/$deviceId/dati")
     }
 
@@ -63,6 +65,10 @@ class TauanitoWebClient(private val client: OkHttpClient) {
             .build()
         
         return client.newCall(request).execute().use { resp ->
+            val finalUrl = resp.request.url.toString()
+            if (finalUrl.contains("/login")) {
+                throw Exception("Sessione scaduta")
+            }
             if (!resp.isSuccessful) throw Exception("Download fallito")
             resp.body?.bytes() ?: throw Exception("File vuoto")
         }
@@ -72,6 +78,9 @@ class TauanitoWebClient(private val client: OkHttpClient) {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+            .header("Accept-Language", "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7")
+            .header("Referer", "${NetworkModule.BASE_URL}/home")
             .get()
             .build()
             
